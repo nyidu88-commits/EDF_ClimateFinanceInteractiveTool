@@ -747,11 +747,194 @@ custom_css <- "
   .contact-email a:hover {
     text-decoration: underline;
   }
+  /* ===== MOBILE MODE (only for QR code users: ?mode=mobile) ===== */
+
+  /* Landing page responsive (always applies on small screens) */
   @media (max-width: 768px) {
-    .hero { grid-template-columns: 1fr; gap: 40px; }
+    .hero { grid-template-columns: 1fr; gap: 30px; padding: 40px 20px; }
+    .hero-text h1 { font-size: 1.6rem; }
+    .hero-text .subtitle { font-size: 0.95rem; }
+    .features { padding: 40px 20px; }
     .features-grid { grid-template-columns: 1fr; }
-    .hero-text h1 { font-size: 1.8rem; }
+    .navbar-top { padding: 12px 16px; }
+    .landing-footer { flex-direction: column; gap: 10px;
+      text-align: center; padding: 20px; }
+    .footer-left, .footer-right { text-align: center; }
   }
+
+  /* ===== Mobile-mode-only styles (QR scan) ===== */
+  .mobile-mode .col-sm-3, .mobile-mode .col-sm-6,
+  .mobile-mode .col-sm-9 {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+  .mobile-mode .container-fluid.py-4 { padding: 8px !important; }
+  .mobile-mode h3 { font-size: 1.1rem !important; }
+  .mobile-mode h4 { font-size: 1rem !important; }
+  .mobile-mode .card { margin-bottom: 8px; }
+  .mobile-mode .card-body { padding: 10px !important; }
+  .mobile-mode .card-header { padding: 8px !important;
+    font-size: 0.85rem; }
+  .mobile-mode .form-label,
+  .mobile-mode .control-label { font-size: 11px !important; }
+  .mobile-mode .irs--shiny .irs-single {
+    font-size: 11px; padding: 2px 5px; }
+  .mobile-mode .irs--shiny .irs-min,
+  .mobile-mode .irs--shiny .irs-max { font-size: 10px; }
+  .mobile-mode .form-group { margin-bottom: 3px !important; }
+  .mobile-mode .irs {
+    margin-top: 0 !important; margin-bottom: 5px !important; }
+  .mobile-mode .btn {
+    font-size: 0.85rem !important; padding: 8px 12px !important; }
+  .mobile-mode .card-body p {
+    font-size: 13px !important; line-height: 1.5 !important; }
+
+  /* Floating chart window */
+  .mobile-mode #scenario-interactive .chart-col {
+    position: fixed !important;
+    bottom: 36px !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    z-index: 9999;
+    background: #fff;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.25);
+    border-top: 3px solid #27ae60;
+    padding: 0 !important;
+    max-height: 55vh;
+    overflow-y: auto;
+    transition: transform 0.3s ease;
+    flex: none !important;
+    max-width: 100% !important;
+  }
+  .mobile-mode #scenario-interactive .chart-col.collapsed {
+    transform: translateY(100%);
+  }
+  .mobile-mode #scenario-interactive .chart-col .card {
+    margin: 0 !important; border-radius: 0 !important;
+    border: none !important; box-shadow: none !important;
+  }
+  .mobile-mode #scenario-interactive .chart-col .card-header {
+    display: none !important;
+  }
+  .mobile-mode #scenario-interactive .chart-col .card-body {
+    padding: 2px !important;
+  }
+  /* Chart height on mobile */
+  .mobile-mode #scenario-interactive .chart-col
+    #chart_2030_custom {
+    height: 50vh !important;
+  }
+  .mobile-mode #scenario-interactive .chart-col
+    .js-plotly-plot, .mobile-mode #scenario-interactive
+    .chart-col .plotly {
+    height: 50vh !important;
+  }
+  /* Hide plotly toolbar on mobile */
+  .mobile-mode .modebar-container {
+    display: none !important;
+  }
+
+  /* Hide download/hr/h4 in floating chart */
+  .mobile-mode #scenario-interactive .chart-col hr,
+  .mobile-mode #scenario-interactive .chart-col h4 {
+    display: none !important; }
+  .mobile-mode #scenario-interactive .chart-col .btn-info {
+    display: none !important; }
+  /* Download row hidden */
+  .mobile-mode #scenario-interactive .chart-col
+    .card-body > :last-child { display: none !important; }
+
+  /* Add bottom padding so params don't hide behind floating chart */
+  .mobile-mode #scenario-interactive .col-sm-6:first-child {
+    padding-bottom: 60vh !important;
+  }
+
+  /* Button bar at top of floating chart */
+  .mobile-mode #scenario-interactive .chart-col
+    .card-body > hr + .row {
+    position: absolute;
+    top: 2px; left: 2px; right: 2px;
+    z-index: 100;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 3px;
+  }
+  .mobile-mode #scenario-interactive .chart-col
+    .card-body > hr + .row > .col-sm-6 {
+    flex: none !important;
+    max-width: none !important;
+    width: auto !important;
+    padding: 0 !important;
+  }
+  .mobile-mode #scenario-interactive .chart-col #show_icm_btn,
+  .mobile-mode #scenario-interactive .chart-col #hide_icm_btn {
+    font-size: 7px !important;
+    padding: 3px 5px !important;
+    width: auto !important;
+    border-radius: 4px;
+    opacity: 0.9;
+  }
+  .mobile-mode #scenario-interactive .chart-col #show_icm_btn .fa,
+  .mobile-mode #scenario-interactive .chart-col #hide_icm_btn .fa,
+  .mobile-mode #scenario-interactive .chart-col #show_icm_btn .fas,
+  .mobile-mode #scenario-interactive .chart-col #hide_icm_btn .fas {
+    font-size: 7px !important;
+  }
+
+  /* Gap label: inline with solution buttons */
+  .mobile-mode #remaining_gap_label {
+    font-size: 7px !important;
+    padding: 3px 5px !important;
+    top: 2px !important;
+    right: 2px !important;
+    border-radius: 4px;
+  }
+  .mobile-mode #gap_tooltip {
+    top: 22px !important;
+    right: 2px !important;
+    min-width: 180px !important;
+    padding: 8px !important;
+    font-size: 11px !important;
+  }
+
+  /* Toggle button for floating chart */
+  #mobile-chart-toggle {
+    display: none;
+  }
+  .mobile-mode #mobile-chart-toggle {
+    display: block !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: 10000;
+    background: #27ae60;
+    color: white;
+    border: none;
+    padding: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  /* Add bottom padding so params not hidden behind float */
+  .mobile-mode #scenario-interactive .params-col {
+    padding-bottom: 50vh !important;
+  }
+
+  /* Single column params on mobile */
+  .mobile-mode #scenario-interactive .params-col
+    .card-body > .row > .col-sm-6 {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+  .mobile-mode #scenario-interactive .params-col h6 {
+    font-size: 0.8rem !important; }
 "
 
 # Helper function to create label with clickable tooltip icon
@@ -781,13 +964,16 @@ ui <- page_fluid(
   shinyjs::useShinyjs(),
   theme = app_theme,
   tags$head(
+    # Mobile viewport
+    tags$meta(name = "viewport",
+              content = "width=device-width, initial-scale=1, maximum-scale=1"),
     # Import Roboto font from Google Fonts
     tags$link(
       href = "https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap",
       rel = "stylesheet"
     ),
     tags$style(HTML(custom_css)),
-    # Initialize Bootstrap tooltips - hover to show
+    # Initialize Bootstrap tooltips + mobile mode detection
     tags$script(HTML("
       $(document).ready(function() {
         $('body').tooltip({
@@ -796,6 +982,19 @@ ui <- page_fluid(
           trigger: 'hover',
           container: 'body'
         });
+        // Detect ?mode=mobile in URL for QR code users
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('mode') === 'mobile') {
+          $('body').addClass('mobile-mode');
+          Shiny.setInputValue('is_mobile', true);
+          // Auto-skip landing page on mobile
+          setTimeout(function() {
+            var btn = document.getElementById('enter_tool');
+            if (btn) btn.click();
+          }, 500);
+        } else {
+          Shiny.setInputValue('is_mobile', false);
+        }
       });
     "))
   ),
@@ -1008,10 +1207,11 @@ ui <- page_fluid(
         # Gap status message
         uiOutput("gap_status"),
 
+        div(id = "scenario-interactive",
         fluidRow(
           # ===== PARAMETERS CARD (6 columns) =====
           column(
-            6,
+            6, class = "params-col",
         card(
           card_header(style = "background: #272b30; color: white;",
                       icon("sliders-h"), " Parameters"),
@@ -1150,7 +1350,7 @@ ui <- page_fluid(
 
       # ===== RIGHT: Your Scenario Chart (6 columns) =====
       column(
-        6,
+        6, class = "chart-col",
         card(
           card_header(
             style = "background: #272b30; color: white;",
@@ -1223,8 +1423,23 @@ ui <- page_fluid(
           )
         )
       )
-        )
-      )
+        ) # end fluidRow params+chart
+        ) # end div scenario-interactive
+      ) # end column(12)
+    ), # end fluidRow Build Your Scenario
+
+    # Mobile floating chart toggle button (hidden on desktop)
+    tags$button(
+      id = "mobile-chart-toggle",
+      onclick = paste0(
+        "var c = document.querySelector('.chart-col');",
+        "if(c) c.classList.toggle('collapsed');",
+        "var btn = document.getElementById('mobile-chart-toggle');",
+        "if(c && c.classList.contains('collapsed')){",
+        "btn.innerHTML='&#9650; Show Chart';}",
+        "else{btn.innerHTML='&#9660; Hide Chart';}"
+      ),
+      HTML("&#9660; Hide Chart")
     )
   ),
 
@@ -1376,15 +1591,40 @@ server <- function(input, output, session) {
   # Shows comparison with ICM+HLR when button is clicked
   output$chart_2030_custom <- renderPlotly({
     user_result <- calculate_finance(current_params(), year = 2030)
+    is_mobile <- isTRUE(input$is_mobile)
 
     if (show_icm_solution()) {
-      # Show comparison chart
       icm_result <- calculate_finance(ICM_HLR_PARAMS, year = 2030)
-      create_comparison_waterfall(user_result, icm_result)
+      p <- create_comparison_waterfall(user_result, icm_result)
     } else {
-      # Show regular waterfall chart
-      create_waterfall_chart(user_result, "")
+      p <- create_waterfall_chart(user_result, "")
     }
+
+    # Mobile: smaller axis fonts, wider bars, tighter margins
+    if (is_mobile) {
+      p <- p %>%
+        style(textfont = list(size = 7)) %>%
+        layout(
+          xaxis = list(
+            title = "",
+            tickfont = list(size = 3),
+            tickangle = -70,
+            automargin = TRUE
+          ),
+          yaxis = list(
+            title = "B USD",
+            titlefont = list(size = 6),
+            tickfont = list(size = 6),
+            gridcolor = "#e0e0e0",
+            zerolinecolor = "#333",
+            range = c(0, 9500),
+            dtick = 2000
+          ),
+          margin = list(b = 55, t = 10, l = 30, r = 5),
+          bargap = 0.1
+        )
+    }
+    p
   })
 
   # Gap status message
