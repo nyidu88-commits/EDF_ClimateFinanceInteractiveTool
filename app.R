@@ -29,17 +29,17 @@ BAU_PARAMS <- list(
   epsilon = 0.0028,      # Carbon Price Elasticity
   P_2030 = 80.9,         # High Carbon Price ($/tCO2)
   C_2030 = 0.30,         # High Coverage Rate
-  P_mid = 35.0,          # Low Carbon Price ($/tCO2)
+  P_mid = 10.0,          # Low Carbon Price ($/tCO2) - EMDEs, BAU (Kerr et al. 2025: P_low_2030)
   C_low = 0.30,          # Low Coverage Rate
-  Lcp_dom = 10.0,        # Domestic Carbon Market Leverage Ratio
+  Lcp_dom = 5.0,         # Domestic Carbon Market Leverage Ratio (BAU; doubles to 10 under HLR)
 
   # International Carbon Market (BAU = 0, not developed yet)
   ICMS_2030 = 0.0,       # International Credits Market Size (B USD)
-  Lcp_int = 10.0,        # International Carbon Market Leverage Ratio
+  Lcp_int = 5.0,         # International Carbon Market Leverage Ratio (BAU; doubles to 10 under HLR)
 
-  # Voluntary Carbon Market (BAU = small, ~50B to get 0.05T with leverage 1)
-  VMS_2030 = 5.0,        # Voluntary Market Size (B USD)
-  Lcp_vol = 10.0         # Voluntary Carbon Market Leverage Ratio
+  # Voluntary Carbon Market (BAU = low estimate of USD 10-40B range, Kerr et al. 2025)
+  VMS_2030 = 10.0,       # Voluntary Market Size (B USD)
+  Lcp_vol = 5.0          # Voluntary Carbon Market Leverage Ratio (BAU; doubles to 10 under HLR)
 )
 
 # Default params for sliders (same as BAU initially)
@@ -112,17 +112,21 @@ calculate_finance <- function(params, year = 2030) {
 
 #' Calculate 2022 baseline values
 calculate_2022_baseline <- function(params) {
+  # 2022 domestic carbon pricing: 23% coverage, $18.5/tCO2 (Carbon Barometer),
+  # leverage ratio 5 (Kerr et al. 2025) -> ~USD 41B mobilised
+  PRIVdom_2022 <- params$E_2030 * params$epsilon * (18.5 * 0.23 * 18.5) * 5
+
   list(
     CF = params$CF,
     PUB = params$PUB_2022,
     PRIV = params$PRIV_2022,
     PRIVpub = params$PUB_2022 * params$Lhighpub,
-    PRIVdom = 0,  # No carbon market in 2022
+    PRIVdom = PRIVdom_2022,
 
     PRIVvol = 0,
     PRIVint = 0,
     CFG = params$CF - (params$PUB_2022 + params$PRIV_2022 +
-                         params$PUB_2022 * params$Lhighpub)
+                         params$PUB_2022 * params$Lhighpub + PRIVdom_2022)
   )
 }
 
