@@ -1236,7 +1236,7 @@ ui <- page_fluid(
                       "Controls how fast government and public institutions increase climate-related funding over time."
                     ),
                     min = 0.05, max = 0.25,
-                    value = DEFAULT_PARAMS$r, step = 0.01),
+                    value = DEFAULT_PARAMS$r, step = 0.0001),
                   sliderInput("g",
                     label = labelWithTooltip(
                       "Private Growth Rate",
@@ -1244,7 +1244,7 @@ ui <- page_fluid(
                       "Controls baseline growth of market-driven private investment in climate mitigation."
                     ),
                     min = 0.03, max = 0.20,
-                    value = DEFAULT_PARAMS$g, step = 0.01),
+                    value = DEFAULT_PARAMS$g, step = 0.0001),
                   sliderInput("Lhighpub",
                     label = labelWithTooltip(
                       "Public Leverage",
@@ -1296,7 +1296,7 @@ ui <- page_fluid(
                       "Average carbon price level in countries with strong carbon pricing systems.",
                       "Determines price incentives for emissions reductions in advanced economies."
                     ),
-                    min = 20, max = 150, value = DEFAULT_PARAMS$P_2030, step = 5),
+                    min = 20, max = 150, value = DEFAULT_PARAMS$P_2030, step = 0.1),
                   sliderInput("C_2030",
                     label = labelWithTooltip(
                       "Advanced Economies Coverage",
