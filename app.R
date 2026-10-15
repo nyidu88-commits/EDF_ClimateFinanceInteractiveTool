@@ -24,13 +24,13 @@ BAU_PARAMS <- list(
   g = 0.0954,            # Private Finance Growth Rate
   Lhighpub = 0.30,       # Public Leverage (BAU = 0.30)
   
-  # Domestic Carbon Market (BAU - frozen at 2022 level, no further expansion)
+  # Domestic Carbon Market (BAU - 2026 World Bank report levels)
   E_2030 = 36.5,         # Global CO2 Emissions (GtCO2)
   epsilon = 0.0028,      # Carbon Price Elasticity
-  P_2030 = 18.5,         # Advanced Economies Carbon Price ($/tCO2) - frozen at 2022 level
-  C_2030 = 0.23,         # Advanced Economies Coverage Rate - frozen at 2022 level
-  P_mid = 10.0,          # EMDEs Carbon Price ($/tCO2)
-  C_low = 0.0,           # EMDEs Coverage Rate - frozen at 2022 level (no EMDEs pricing yet)
+  P_Adv = 10.0,          # Advanced Economies Carbon Price ($/tCO2) - World Bank 2026
+  C_Adv = 0.33,          # Advanced Economies Coverage Rate - World Bank 2026
+  P_EMDEs = 0.0,         # EMDEs Carbon Price ($/tCO2) - World Bank 2026
+  C_EMDEs = 0.0,         # EMDEs Coverage Rate (no EMDEs pricing in BAU)
   Lcp_dom = 5.0,         # Domestic Carbon Market Leverage Ratio (BAU; doubles to 10 under HLR)
   
   # International Carbon Market (BAU = 0, not developed yet)
@@ -55,10 +55,10 @@ ICM_HLR_PARAMS <- list(
   Lhighpub = 0.60,       # High leverage ratio (HLR)
   E_2030 = 36.5,
   epsilon = 0.0028,
-  P_2030 = 80.9,
-  C_2030 = 0.30,
-  P_mid = 35.0,
-  C_low = 0.30,
+  P_Adv = 80.0,          # capped at the slider max of 80 (was 80.9)
+  C_Adv = 0.30,
+  P_EMDEs = 35.0,
+  C_EMDEs = 0.30,
   Lcp_dom = 10.0,
   ICMS_2030 = 210.0,     # International Carbon Market (ICM)
   Lcp_int = 10.0,
@@ -84,8 +84,8 @@ calculate_finance <- function(params, year = 2030) {
   
   # Calculate domestic carbon pricing mobilization (with domestic leverage)
   PRIVdom <- params$E_2030 * params$epsilon * (
-    params$P_2030 * params$C_2030 * params$P_2030 +
-      params$P_mid * params$C_low * params$P_mid
+    params$P_Adv * params$C_Adv * params$P_Adv +
+      params$P_EMDEs * params$C_EMDEs * params$P_EMDEs
   ) * params$Lcp_dom
   
   # Voluntary markets (with voluntary leverage)
@@ -112,9 +112,19 @@ calculate_finance <- function(params, year = 2030) {
 
 #' Calculate 2022 baseline values
 calculate_2022_baseline <- function(params) {
-  # 2022 domestic carbon pricing: 23% coverage, $18.5/tCO2 (Carbon Barometer),
-  # leverage ratio 5 (Kerr et al. 2025) -> ~USD 41B mobilised
-  PRIVdom_2022 <- params$E_2030 * params$epsilon * (18.5 * 0.23 * 18.5) * 5
+  # 2022 domestic carbon pricing (World Bank, State and Trends of Carbon Pricing 2023:
+  # 73 carbon taxes/ETSs covering ~23% of global GHG emissions).
+  # Advanced economies: coverage 0.23, price $18.5/tCO2 (price not stated in the
+  # World Bank report itself - source to be confirmed). EMDEs: 0 coverage, 0 price.
+  # Leverage ratio 5 (Kerr et al. 2025).
+  P_Adv_2022   <- 18.5
+  C_Adv_2022   <- 0.23
+  P_EMDEs_2022 <- 0
+  C_EMDEs_2022 <- 0
+  PRIVdom_2022 <- params$E_2030 * params$epsilon * (
+    P_Adv_2022 * C_Adv_2022 * P_Adv_2022 +
+      P_EMDEs_2022 * C_EMDEs_2022 * P_EMDEs_2022
+  ) * 5
   
   list(
     CF = params$CF,
@@ -666,6 +676,84 @@ custom_css <- "
     color: #555;
     line-height: 1.6;
   }
+  .params-col { display: flex; flex-direction: column; }
+  .params-col > .card { flex: 0 0 auto; }
+  .reflect-card {
+    margin-top: 15px;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .reflect-title {
+    display: flex; align-items: baseline; gap: 10px;
+    margin: 0 2px 10px 2px;
+  }
+  .reflect-title strong { font-size: 16px; color: #1e5631; }
+  .reflect-title span { font-size: 13px; color: #777; }
+  .reflect-grid {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .reflect-item {
+    --accent: #27ae60; --tint: #f1faf5;
+    position: relative;
+    background: var(--tint);
+    border-radius: 12px;
+    border-top: 4px solid var(--accent);
+    padding: 16px 16px 14px 16px;
+    display: flex; flex-direction: column;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .reflect-item:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+  }
+  .reflect-item.q-intl { --accent: #00838f; --tint: #e0f7fa; }
+  .reflect-item.q-vol  { --accent: #7b1fa2; --tint: #f3e5f5; }
+  .reflect-item.q-pp   { --accent: #e65100; --tint: #fff3e0; }
+  .reflect-icon {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; margin-bottom: 12px;
+  }
+  .reflect-q {
+    font-weight: 700; font-size: 15px; line-height: 1.4;
+    color: #2c3e50; margin-bottom: 8px;
+  }
+  .reflect-hint {
+    font-size: 13.5px; line-height: 1.5; color: #555;
+    font-style: italic; margin-bottom: 12px;
+  }
+  .reflect-try {
+    margin-top: auto;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    font-size: 12px; color: #777;
+  }
+  .reflect-chip {
+    background: #fff; color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 999px; padding: 2px 10px;
+    font-weight: 600; font-size: 12px;
+  }
+  a.reflect-chip { text-decoration: none; cursor: pointer; transition: all .15s ease; }
+  a.reflect-chip:hover { background: var(--accent); color: #fff; }
+  .reflect-arrow { font-size: 10px; margin-left: 4px; }
+  @keyframes slider-flash {
+    0%   { box-shadow: 0 0 0 0 rgba(39,174,96,0.0); background: transparent; }
+    15%  { box-shadow: 0 0 0 4px rgba(39,174,96,0.55); background: #fffde7; }
+    100% { box-shadow: 0 0 0 0 rgba(39,174,96,0.0); background: transparent; }
+  }
+  .slider-flash {
+    animation: slider-flash 2s ease-out;
+    border-radius: 8px;
+  }
+  @media (max-width: 991px) {
+    .reflect-grid { grid-template-columns: 1fr; }
+  }
   .intro-box {
     background: linear-gradient(135deg, #e8f8f0 0%, #d4efdf 100%);
     border-left: 5px solid #27ae60;
@@ -1072,6 +1160,49 @@ ui <- page_fluid(
     tags$style(HTML(custom_css)),
     # Initialize Bootstrap tooltips + mobile mode detection
     tags$script(HTML("
+      // Show fraction-valued sliders as percentages (model values stay fractions)
+      (function() {
+        var cfg = {r: [2, 5], g: [2, 4], C_Adv: [0, 5], C_EMDEs: [0, 5]};
+        var tries = 0;
+        function apply() {
+          var pending = 0;
+          Object.keys(cfg).forEach(function(id) {
+            var s = $('#' + id).data('ionRangeSlider');
+            if (!s) { pending++; return; }
+            if (s.__pct) return;
+            var dec = cfg[id][0], grid = cfg[id][1];
+            var pretty = function(v) { return (+(v * 100).toFixed(dec)) + '%'; };
+            // keep % formatting when the server updates the slider (Show Solution, Reset, steps)
+            var origUpdate = s.update;
+            s.update = function(o) {
+              o = o || {};
+              o.prettify = pretty;
+              o.grid_num = grid;
+              return origUpdate.call(s, o);
+            };
+            s.update({});
+            s.__pct = true;
+          });
+          if (pending && tries++ < 50) setTimeout(apply, 200);
+        }
+        $(document).on('shiny:connected', function() { setTimeout(apply, 100); });
+      })();
+    ")),
+    tags$script(HTML("
+      $(document).on('click', 'a.reflect-chip', function(e) {
+        e.preventDefault();
+        var id = $(this).data('target');
+        var el = document.getElementById(id);
+        if (!el) return;
+        var box = $(el).closest('.shiny-input-container')[0] || el;
+        box.scrollIntoView({behavior: 'smooth', block: 'center'});
+        $(box).removeClass('slider-flash');
+        void box.offsetWidth;
+        $(box).addClass('slider-flash');
+        setTimeout(function() { $(box).removeClass('slider-flash'); }, 2100);
+      });
+    ")),
+    tags$script(HTML("
       $(document).ready(function() {
         $('body').tooltip({
           selector: '[data-bs-toggle=\"tooltip\"]',
@@ -1128,13 +1259,14 @@ ui <- page_fluid(
           h1("Bridge the Climate Finance Gap"),
           p(
             class = "subtitle",
-            "Explore how policy choices and innovative financing mechanisms can help ",
-            "close the USD 7.1 trillion annual climate finance gap by 2030."
+            "Explore how different policy choices can help close the ",
+            "USD 7.1 trillion annual climate finance gap by 2030."
           ),
           p(
             class = "subtitle",
-            "Adjust key parameters to see how different strategies, from public ",
-            "finance growth to carbon market expansion, can help achieve our 2030 goals.",
+            "Start from a business-as-usual baseline, then try the levers yourself: ",
+            "expanding domestic carbon pricing, opening up international carbon markets, ",
+            "and raising leverage ratios. See how far each one gets us toward closing the gap.",
             style = "font-size: 1rem; color: #555;"
           ),
           tags$a(
@@ -1249,14 +1381,19 @@ ui <- page_fluid(
                 style = "font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 15px;"
               ),
               p(
-                "For more information, refer to our ",
+                "This tool builds on our published paper (Kerr et al., 2025, npj Climate Action), ",
+                "which estimates that about USD 8.4 trillion a year is needed by 2030 and finds that ",
+                "international carbon markets paired with higher leverage ratios could close the gap. ",
+                "This version updates that work in two ways: the baseline now assumes domestic carbon ",
+                "pricing stays at its current level (World Bank, 2026), and the solution is split into three steps you can ",
+                "stack, namely domestic expansion, international markets, and higher leverage. ",
                 tags$a(
                   href = "https://www.nature.com/articles/s44168-025-00220-x",
                   target = "_blank",
-                  "published paper",
+                  "Read the paper",
                   style = "color: #1e5631; text-decoration: underline; font-weight: 600;"
                 ),
-                ".",
+                " for the full method.",
                 style = "font-size: 14px; line-height: 1.6; color: #333;"
               )
             )
@@ -1271,8 +1408,8 @@ ui <- page_fluid(
             p(
               "Even if public and private finance keep growing at their historical pace, ",
               "that growth alone isn't enough. Without domestic carbon pricing expanding ",
-              "beyond its 2022 level, the climate finance gap in 2030 is still about ",
-              "$4,890 billion, more than half of the $8,400 billion needed.",
+              "beyond its current level, the climate finance gap in 2030 is still about ",
+              "1.4 times everything already being financed.",
               style = "margin: 0; font-size: 16px; color: #555; line-height: 1.6;"
             )
           ),
@@ -1324,17 +1461,16 @@ ui <- page_fluid(
                   "As of 2025, there are 80 carbon pricing instruments in operation ",
                   "worldwide, 43 carbon taxes and 37 emissions trading systems, together ",
                   "covering about 28% of global greenhouse gas emissions and raising over ",
-                  "USD 100 billion in revenue in 2024. Emissions trading systems alone ",
-                  "raised a record near USD 80 billion in 2025.",
+                  "USD 100 billion in revenue in 2024.",
                   style = "font-size: 16px; color: #333; line-height: 1.6; margin-bottom: 12px;"
                 ),
                 p(
                   tags$strong("What's next for 2030?"),
                   " Closing the remaining gap will take more than holding steady: ",
                   "expanding carbon pricing to higher prices and broader coverage ",
-                  "(including EMDEs adopting their own policies), building out ",
+                  "(including EMDEs establishing their own policies), building out ",
                   "international carbon markets, and raising leverage ratios so each ",
-                  "dollar of carbon revenue mobilises more private investment.",
+                  "dollar of carbon payment mobilises more private investment.",
                   style = "font-size: 16px; color: #333; line-height: 1.6; margin-bottom: 12px;"
                 ),
                 p(
@@ -1350,19 +1486,19 @@ ui <- page_fluid(
               div(
                 class = "guided-question-card",
                 icon("question-circle", style = "color: #27ae60;"),
-                tags$strong(" What if coverage expands at a higher price?", style = "color: #1e5631;"),
-                " If compliance domestic carbon markets raise their price and expand ",
-                "coverage, and EMDEs establish carbon pricing policies of their own, how ",
-                "much additional finance can that mobilise? Try adjusting the sliders ",
-                "across the whole Parameters panel to explore different scenarios."
+                tags$strong(" What if carbon prices rise and coverage grows?", style = "color: #1e5631;"),
+                " Suppose domestic carbon markets raise their prices and widen their ",
+                "coverage, while EMDEs start carbon pricing policies of their own. How ",
+                "much additional finance could that mobilise? Try the sliders in the ",
+                "Parameters panel to find out."
               ),
               div(
                 class = "guided-question-card",
                 icon("question-circle", style = "color: #27ae60;"),
                 tags$strong(" Can international carbon markets help?", style = "color: #1e5631;"),
                 " Cooperation between countries can also mobilise climate finance. Try ",
-                "the International Carbon Price sliders (Market Size and Leverage) to ",
-                "see how much international carbon markets alone could contribute."
+                "the International Market Size slider under International Carbon Price to see how much ",
+                "international carbon markets could contribute on their own."
               ),
               div(
                 class = "guided-question-card",
@@ -1402,7 +1538,7 @@ ui <- page_fluid(
                                                "Annual growth rate of public climate finance.",
                                                "Controls how fast government and public institutions increase climate-related funding over time."
                                              ),
-                                             min = 0.05, max = 0.25,
+                                             min = 0, max = 0.25,
                                              value = DEFAULT_PARAMS$r, step = 0.0001),
                                  sliderInput("g",
                                              label = labelWithTooltip(
@@ -1410,7 +1546,7 @@ ui <- page_fluid(
                                                "Annual growth rate of private climate finance not driven by carbon pricing or public leverage.",
                                                "Controls baseline growth of market-driven private investment in climate mitigation."
                                              ),
-                                             min = 0.03, max = 0.20,
+                                             min = 0, max = 0.20,
                                              value = DEFAULT_PARAMS$g, step = 0.0001),
                                  sliderInput("Lhighpub",
                                              label = labelWithTooltip(
@@ -1428,7 +1564,7 @@ ui <- page_fluid(
                                          style = "color: #00838f; margin-bottom: 10px;"),
                                  sliderInput("ICMS_2030",
                                              label = labelWithTooltip(
-                                               "Market Size",
+                                               "International Market Size",
                                                "Annual transaction value of the international carbon market.",
                                                "Determines how much capital is transferred through cross-border carbon trading mechanisms."
                                              ),
@@ -1448,7 +1584,7 @@ ui <- page_fluid(
                                             icon = icon("sync-alt"),
                                             class = "btn btn-success w-100")
                         ),
-                        
+
                         # Right column: Domestic + Voluntary
                         column(6,
                                # Domestic Carbon section
@@ -1457,34 +1593,34 @@ ui <- page_fluid(
                            margin-bottom: 15px;",
                                  tags$h6(icon("industry"), " Domestic Carbon Price",
                                          style = "color: #2e7d32; margin-bottom: 10px;"),
-                                 sliderInput("P_2030",
+                                 sliderInput("P_Adv",
                                              label = labelWithTooltip(
                                                "Advanced Economies Price ($/tCO2)",
-                                               "Average carbon price level in countries with strong carbon pricing systems.",
+                                               "Average carbon price level in Advanced economies.",
                                                "Determines price incentives for emissions reductions in advanced economies."
                                              ),
-                                             min = 15, max = 150, value = DEFAULT_PARAMS$P_2030, step = 0.1),
-                                 sliderInput("C_2030",
+                                             min = 0, max = 80, value = DEFAULT_PARAMS$P_Adv, step = 0.1),
+                                 sliderInput("C_Adv",
                                              label = labelWithTooltip(
                                                "Advanced Economies Coverage",
-                                               "Share of global emissions covered by carbon pricing in mature systems.",
-                                               "Controls how much of the economy is affected by carbon pricing in high-capacity countries."
+                                               "Share of global emissions covered by carbon pricing in Advanced economies.",
+                                               "Controls how much of the economy is affected by carbon pricing in Advanced economies."
                                              ),
-                                             min = 0.1, max = 0.5, value = DEFAULT_PARAMS$C_2030, step = 0.05),
-                                 sliderInput("P_mid",
+                                             min = 0, max = 0.5, value = DEFAULT_PARAMS$C_Adv, step = 0.01),
+                                 sliderInput("P_EMDEs",
                                              label = labelWithTooltip(
                                                "EMDEs Price ($/tCO2)",
-                                               "Average carbon price level in Emerging market and developing economies (EMDEs) with weaker or emerging carbon pricing systems.",
+                                               "Average carbon price level in Emerging market and developing economies (EMDEs).",
                                                "Represents modest price incentives due to institutional or economic constraints in EMDEs."
                                              ),
-                                             min = 10, max = 80, value = DEFAULT_PARAMS$P_mid, step = 5),
-                                 sliderInput("C_low",
+                                             min = 0, max = 80, value = DEFAULT_PARAMS$P_EMDEs, step = 5),
+                                 sliderInput("C_EMDEs",
                                              label = labelWithTooltip(
                                                "EMDEs Coverage",
                                                "Share of global emissions covered by carbon pricing in Emerging market and developing economies (EMDEs).",
                                                "Controls carbon pricing coverage in EMDEs with nascent or developing systems."
                                              ),
-                                             min = 0, max = 0.5, value = DEFAULT_PARAMS$C_low, step = 0.05),
+                                             min = 0, max = 0.5, value = DEFAULT_PARAMS$C_EMDEs, step = 0.01),
                                  sliderInput("Lcp_dom",
                                              label = labelWithTooltip(
                                                "Domestic Carbon Price Leverage Ratio",
@@ -1500,19 +1636,76 @@ ui <- page_fluid(
                                          style = "color: #7b1fa2; margin-bottom: 10px;"),
                                  sliderInput("VMS_2030",
                                              label = labelWithTooltip(
-                                               "Voluntary Size",
+                                               "Voluntary Market Size",
                                                "Annual transaction value of the voluntary carbon market.",
                                                "Controls how much capital is mobilised through voluntary carbon credit purchases."
                                              ),
                                              min = 0, max = 100, value = DEFAULT_PARAMS$VMS_2030, step = 5, post = " B"),
                                  sliderInput("Lcp_vol",
                                              label = labelWithTooltip(
-                                               "Voluntary Leverage Ratio",
+                                               "Voluntary Carbon Market Leverage Ratio",
                                                "Private investment mobilised per dollar spent in the voluntary carbon market.",
                                                "Measures whether voluntary credits lead to additional mitigation investment."
                                              ),
                                              min = 1, max = 20, value = DEFAULT_PARAMS$Lcp_vol, step = 1)
                                )
+                        )
+                      )
+                    )
+                  )
+                  ,
+                  # Reflection questions (fills the blank space below the Parameters card)
+                  div(
+                    class = "reflect-card",
+                    div(class = "reflect-title",
+                        strong(icon("lightbulb"), " Think it through"),
+                        span("Questions to explore after building your scenario")),
+                    div(
+                      class = "reflect-grid",
+                      div(
+                        class = "reflect-item q-intl",
+                        div(class = "reflect-icon", icon("globe")),
+                        div(class = "reflect-q",
+                            "How could international carbon markets push domestic markets to raise ambition?"),
+                        div(class = "reflect-hint",
+                            "Could cheaper compliance abroad let countries aim higher at home?"),
+                        div(
+                          class = "reflect-try",
+                          span("Try:"),
+                          tags$a(href = "#", class = "reflect-chip", `data-target` = "ICMS_2030",
+                                  title = "Jump to this slider", "International Market Size", icon("arrow-up", class = "reflect-arrow"))
+                        )
+                      ),
+                      div(
+                        class = "reflect-item q-vol",
+                        div(class = "reflect-icon", icon("leaf")),
+                        div(class = "reflect-q",
+                            "Under Article 6, are voluntary and international markets substitutes or complements?"),
+                        div(class = "reflect-hint",
+                            "Do they compete for the same credits, or build on each other?"),
+                        div(
+                          class = "reflect-try",
+                          span("Try:"),
+                          tags$a(href = "#", class = "reflect-chip", `data-target` = "ICMS_2030",
+                                  title = "Jump to this slider", "International Market Size", icon("arrow-up", class = "reflect-arrow")),
+                          tags$a(href = "#", class = "reflect-chip", `data-target` = "VMS_2030",
+                                  title = "Jump to this slider", "Voluntary Market Size", icon("arrow-up", class = "reflect-arrow"))
+                        )
+                      ),
+                      div(
+                        class = "reflect-item q-pp",
+                        div(class = "reflect-icon", icon("landmark")),
+                        div(class = "reflect-q",
+                            "How do public and private growth rates relate?"),
+                        div(class = "reflect-hint",
+                            "Does one pull the other up, or are you counting the same effect twice?"),
+                        div(
+                          class = "reflect-try",
+                          span("Try:"),
+                          tags$a(href = "#", class = "reflect-chip", `data-target` = "r",
+                                  title = "Jump to this slider", "Public Growth Rate", icon("arrow-up", class = "reflect-arrow")),
+                          tags$a(href = "#", class = "reflect-chip", `data-target` = "g",
+                                  title = "Jump to this slider", "Private Growth Rate", icon("arrow-up", class = "reflect-arrow"))
                         )
                       )
                     )
@@ -1675,10 +1868,10 @@ server <- function(input, output, session) {
       Lhighpub = input$Lhighpub,
       E_2030 = DEFAULT_PARAMS$E_2030,
       epsilon = DEFAULT_PARAMS$epsilon,
-      P_2030 = input$P_2030,
-      C_2030 = input$C_2030,
-      P_mid = input$P_mid,
-      C_low = input$C_low,
+      P_Adv = input$P_Adv,
+      C_Adv = input$C_Adv,
+      P_EMDEs = input$P_EMDEs,
+      C_EMDEs = input$C_EMDEs,
       Lcp_dom = input$Lcp_dom,
       VMS_2030 = input$VMS_2030,
       Lcp_vol = input$Lcp_vol,
@@ -1699,10 +1892,10 @@ server <- function(input, output, session) {
     updateSliderInput(session, "Lhighpub", value = ICM_HLR_PARAMS$Lhighpub)
     updateSliderInput(session, "ICMS_2030", value = ICM_HLR_PARAMS$ICMS_2030)
     updateSliderInput(session, "Lcp_int", value = ICM_HLR_PARAMS$Lcp_int)
-    updateSliderInput(session, "P_2030", value = ICM_HLR_PARAMS$P_2030)
-    updateSliderInput(session, "C_2030", value = ICM_HLR_PARAMS$C_2030)
-    updateSliderInput(session, "P_mid", value = ICM_HLR_PARAMS$P_mid)
-    updateSliderInput(session, "C_low", value = ICM_HLR_PARAMS$C_low)
+    updateSliderInput(session, "P_Adv", value = ICM_HLR_PARAMS$P_Adv)
+    updateSliderInput(session, "C_Adv", value = ICM_HLR_PARAMS$C_Adv)
+    updateSliderInput(session, "P_EMDEs", value = ICM_HLR_PARAMS$P_EMDEs)
+    updateSliderInput(session, "C_EMDEs", value = ICM_HLR_PARAMS$C_EMDEs)
     updateSliderInput(session, "Lcp_dom", value = ICM_HLR_PARAMS$Lcp_dom)
     updateSliderInput(session, "VMS_2030", value = ICM_HLR_PARAMS$VMS_2030)
     updateSliderInput(session, "Lcp_vol", value = ICM_HLR_PARAMS$Lcp_vol)
@@ -1712,10 +1905,10 @@ server <- function(input, output, session) {
     shinyjs::disable("Lhighpub")
     shinyjs::disable("ICMS_2030")
     shinyjs::disable("Lcp_int")
-    shinyjs::disable("P_2030")
-    shinyjs::disable("C_2030")
-    shinyjs::disable("P_mid")
-    shinyjs::disable("C_low")
+    shinyjs::disable("P_Adv")
+    shinyjs::disable("C_Adv")
+    shinyjs::disable("P_EMDEs")
+    shinyjs::disable("C_EMDEs")
     shinyjs::disable("Lcp_dom")
     shinyjs::disable("VMS_2030")
     shinyjs::disable("Lcp_vol")
@@ -1735,10 +1928,10 @@ server <- function(input, output, session) {
       updateSliderInput(session, "Lhighpub", value = params$Lhighpub)
       updateSliderInput(session, "ICMS_2030", value = params$ICMS_2030)
       updateSliderInput(session, "Lcp_int", value = params$Lcp_int)
-      updateSliderInput(session, "P_2030", value = params$P_2030)
-      updateSliderInput(session, "C_2030", value = params$C_2030)
-      updateSliderInput(session, "P_mid", value = params$P_mid)
-      updateSliderInput(session, "C_low", value = params$C_low)
+      updateSliderInput(session, "P_Adv", value = params$P_Adv)
+      updateSliderInput(session, "C_Adv", value = params$C_Adv)
+      updateSliderInput(session, "P_EMDEs", value = params$P_EMDEs)
+      updateSliderInput(session, "C_EMDEs", value = params$C_EMDEs)
       updateSliderInput(session, "Lcp_dom", value = params$Lcp_dom)
       updateSliderInput(session, "VMS_2030", value = params$VMS_2030)
       updateSliderInput(session, "Lcp_vol", value = params$Lcp_vol)
@@ -1750,10 +1943,10 @@ server <- function(input, output, session) {
     shinyjs::enable("Lhighpub")
     shinyjs::enable("ICMS_2030")
     shinyjs::enable("Lcp_int")
-    shinyjs::enable("P_2030")
-    shinyjs::enable("C_2030")
-    shinyjs::enable("P_mid")
-    shinyjs::enable("C_low")
+    shinyjs::enable("P_Adv")
+    shinyjs::enable("C_Adv")
+    shinyjs::enable("P_EMDEs")
+    shinyjs::enable("C_EMDEs")
     shinyjs::enable("Lcp_dom")
     shinyjs::enable("VMS_2030")
     shinyjs::enable("Lcp_vol")
@@ -1768,16 +1961,16 @@ server <- function(input, output, session) {
   # Step 1: Expand Domestic Price
   observeEvent(input$step1_btn, {
     if (active_step() == 0) {
-      updateSliderInput(session, "P_2030", value = ICM_HLR_PARAMS$P_2030)
-      updateSliderInput(session, "C_2030", value = ICM_HLR_PARAMS$C_2030)
-      updateSliderInput(session, "P_mid", value = ICM_HLR_PARAMS$P_mid)
-      updateSliderInput(session, "C_low", value = ICM_HLR_PARAMS$C_low)
+      updateSliderInput(session, "P_Adv", value = ICM_HLR_PARAMS$P_Adv)
+      updateSliderInput(session, "C_Adv", value = ICM_HLR_PARAMS$C_Adv)
+      updateSliderInput(session, "P_EMDEs", value = ICM_HLR_PARAMS$P_EMDEs)
+      updateSliderInput(session, "C_EMDEs", value = ICM_HLR_PARAMS$C_EMDEs)
       active_step(1)
     } else if (active_step() == 1) {
-      updateSliderInput(session, "P_2030", value = DEFAULT_PARAMS$P_2030)
-      updateSliderInput(session, "C_2030", value = DEFAULT_PARAMS$C_2030)
-      updateSliderInput(session, "P_mid", value = DEFAULT_PARAMS$P_mid)
-      updateSliderInput(session, "C_low", value = DEFAULT_PARAMS$C_low)
+      updateSliderInput(session, "P_Adv", value = DEFAULT_PARAMS$P_Adv)
+      updateSliderInput(session, "C_Adv", value = DEFAULT_PARAMS$C_Adv)
+      updateSliderInput(session, "P_EMDEs", value = DEFAULT_PARAMS$P_EMDEs)
+      updateSliderInput(session, "C_EMDEs", value = DEFAULT_PARAMS$C_EMDEs)
       active_step(0)
     }
   })
@@ -2007,10 +2200,10 @@ server <- function(input, output, session) {
     updateSliderInput(session, "g", value = DEFAULT_PARAMS$g)
     updateSliderInput(session, "Lhighpub", value = DEFAULT_PARAMS$Lhighpub)
     # Domestic Carbon Market
-    updateSliderInput(session, "P_2030", value = DEFAULT_PARAMS$P_2030)
-    updateSliderInput(session, "C_2030", value = DEFAULT_PARAMS$C_2030)
-    updateSliderInput(session, "P_mid", value = DEFAULT_PARAMS$P_mid)
-    updateSliderInput(session, "C_low", value = DEFAULT_PARAMS$C_low)
+    updateSliderInput(session, "P_Adv", value = DEFAULT_PARAMS$P_Adv)
+    updateSliderInput(session, "C_Adv", value = DEFAULT_PARAMS$C_Adv)
+    updateSliderInput(session, "P_EMDEs", value = DEFAULT_PARAMS$P_EMDEs)
+    updateSliderInput(session, "C_EMDEs", value = DEFAULT_PARAMS$C_EMDEs)
     updateSliderInput(session, "Lcp_dom", value = DEFAULT_PARAMS$Lcp_dom)
     # International Carbon Market
     updateSliderInput(session, "ICMS_2030", value = DEFAULT_PARAMS$ICMS_2030)
