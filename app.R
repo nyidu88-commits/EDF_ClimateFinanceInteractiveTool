@@ -23,20 +23,20 @@ BAU_PARAMS <- list(
   PRIV_2022 = 438.0,     # Private Finance in 2022 (B USD)
   g = 0.0954,            # Private Finance Growth Rate
   Lhighpub = 0.30,       # Public Leverage (BAU = 0.30)
-
-  # Domestic Carbon Market (BAU - modest carbon pricing)
+  
+  # Domestic Carbon Market (BAU - frozen at 2022 level, no further expansion)
   E_2030 = 36.5,         # Global CO2 Emissions (GtCO2)
   epsilon = 0.0028,      # Carbon Price Elasticity
-  P_2030 = 80.9,         # High Carbon Price ($/tCO2)
-  C_2030 = 0.30,         # High Coverage Rate
-  P_mid = 10.0,          # Low Carbon Price ($/tCO2) - EMDEs, BAU (Kerr et al. 2025: P_low_2030)
-  C_low = 0.30,          # Low Coverage Rate
+  P_2030 = 18.5,         # Advanced Economies Carbon Price ($/tCO2) - frozen at 2022 level
+  C_2030 = 0.23,         # Advanced Economies Coverage Rate - frozen at 2022 level
+  P_mid = 10.0,          # EMDEs Carbon Price ($/tCO2)
+  C_low = 0.0,           # EMDEs Coverage Rate - frozen at 2022 level (no EMDEs pricing yet)
   Lcp_dom = 5.0,         # Domestic Carbon Market Leverage Ratio (BAU; doubles to 10 under HLR)
-
+  
   # International Carbon Market (BAU = 0, not developed yet)
   ICMS_2030 = 0.0,       # International Credits Market Size (B USD)
   Lcp_int = 5.0,         # International Carbon Market Leverage Ratio (BAU; doubles to 10 under HLR)
-
+  
   # Voluntary Carbon Market (BAU = low estimate of USD 10-40B range, Kerr et al. 2025)
   VMS_2030 = 10.0,       # Voluntary Market Size (B USD)
   Lcp_vol = 5.0          # Voluntary Carbon Market Leverage Ratio (BAU; doubles to 10 under HLR)
@@ -74,30 +74,30 @@ ICM_HLR_PARAMS <- list(
 #' Calculate finance values for a given year with parameters
 calculate_finance <- function(params, year = 2030) {
   years_from_2022 <- year - 2022
-
+  
   # Project public and private finance
   PUB <- params$PUB_2022 * (1 + params$r)^years_from_2022
   PRIV <- params$PRIV_2022 * (1 + params$g)^years_from_2022
-
+  
   # Calculate leverage components
   PRIVpub <- PUB * params$Lhighpub
-
+  
   # Calculate domestic carbon pricing mobilization (with domestic leverage)
   PRIVdom <- params$E_2030 * params$epsilon * (
     params$P_2030 * params$C_2030 * params$P_2030 +
       params$P_mid * params$C_low * params$P_mid
   ) * params$Lcp_dom
-
+  
   # Voluntary markets (with voluntary leverage)
   PRIVvol <- params$VMS_2030 * params$Lcp_vol
-
+  
   # International markets (with international leverage)
   PRIVint <- params$ICMS_2030 * params$Lcp_int
-
+  
   # Calculate remaining gap
   total_available <- PUB + PRIV + PRIVpub + PRIVdom + PRIVvol + PRIVint
   CFG <- params$CF - total_available
-
+  
   list(
     CF = params$CF,
     PUB = PUB,
@@ -115,14 +115,14 @@ calculate_2022_baseline <- function(params) {
   # 2022 domestic carbon pricing: 23% coverage, $18.5/tCO2 (Carbon Barometer),
   # leverage ratio 5 (Kerr et al. 2025) -> ~USD 41B mobilised
   PRIVdom_2022 <- params$E_2030 * params$epsilon * (18.5 * 0.23 * 18.5) * 5
-
+  
   list(
     CF = params$CF,
     PUB = params$PUB_2022,
     PRIV = params$PRIV_2022,
     PRIVpub = params$PUB_2022 * params$Lhighpub,
     PRIVdom = PRIVdom_2022,
-
+    
     PRIVvol = 0,
     PRIVint = 0,
     CFG = params$CF - (params$PUB_2022 + params$PRIV_2022 +
@@ -143,7 +143,7 @@ calculate_timeseries <- function(params, years = 2022:2100) {
       res$PRIVdom + res$PRIVvol + res$PRIVint
     res
   })
-
+  
   data.frame(
     year = sapply(results, function(x) x$year),
     CF = sapply(results, function(x) x$CF),
@@ -163,14 +163,16 @@ calculate_timeseries <- function(params, years = 2022:2100) {
 # ==============================================================================
 
 # Labels and colors matching the Python version
+# Order: Total -> Public -> Private -> Public Leverage ->
+#        Domestic -> International -> Voluntary -> Remaining Gap
 WATERFALL_LABELS <- c(
   "Total Finance\nNeeded",
   "Public Finance",
   "Private Finance",
   "Public Leverage",
   "Domestic Carbon Price",
-  "Voluntary Carbon Price",
   "International\nCarbon Price",
+  "Voluntary Carbon Price",
   "<b>Remaining Gap</b>"
 )
 
@@ -180,9 +182,89 @@ WATERFALL_COLORS <- c(
   "#F08080",   # lightcoral - PRIV
   "#FFD700",   # gold - PRIVpub
   "#32CD32",   # limegreen - PRIVdom
-  "#DA70D6",   # orchid - PRIVvol
   "#00BFFF",   # deepskyblue - PRIVint
+  "#DA70D6",   # orchid - PRIVvol
   "#FF6347"    # tomato - CFG
+)
+
+#' Compute de-collided y positions for the value labels above each waterfall
+#' bar. Two-pass algorithm:
+#'  1) push: walk left to right and nudge a label up, but only when its own
+#'     NATURAL height sits close to the previous bar's natural height. Using
+#'     the natural (unmodified) heights to detect a collision, rather than
+#'     the already-pushed position, keeps each push local instead of
+#'     cascading down the rest of a descending staircase whenever two
+#'     adjacent bars happen to collide early on.
+#'  2) pull back: clamp anything pushed above the visible chart area, or a
+#'     bar tall enough to leave its own label below 0 (an extreme slider
+#'     combination can do this), back inside the plot, nudging the
+#'     neighbour on the side it was pulled toward so the pull-back doesn't
+#'     reintroduce an overlap.
+compute_label_ypos <- function(top_y, yaxis_max) {
+  n <- length(top_y)
+  if (n == 0) return(numeric(0))
+  min_gap <- yaxis_max * 0.045
+  top_margin <- yaxis_max * 0.06
+  visible_top <- yaxis_max - top_margin
+  visible_bottom <- yaxis_max * 0.03
+  
+  pos <- top_y
+  if (n > 1) {
+    for (i in 2:n) {
+      if (abs(top_y[i] - top_y[i - 1]) < min_gap && pos[i] < pos[i - 1] + min_gap) {
+        pos[i] <- pos[i - 1] + min_gap
+      }
+    }
+  }
+  
+  for (i in seq_len(n)) {
+    if (pos[i] > visible_top) {
+      pos[i] <- visible_top
+      if (i > 1 && pos[i - 1] > pos[i] - min_gap) {
+        pos[i - 1] <- pos[i] - min_gap
+      }
+    } else if (pos[i] < visible_bottom) {
+      pos[i] <- visible_bottom
+      if (i < n && pos[i + 1] < pos[i] + min_gap) {
+        pos[i + 1] <- pos[i] + min_gap
+      }
+    }
+  }
+  pos
+}
+
+#' Build the value-label annotations (skips zero-value bars entirely) for a
+#' waterfall data frame produced below, with overlap avoided.
+waterfall_label_annotations <- function(df, yaxis_max = 9500) {
+  keep <- df$abs_value > 0.5
+  if (!any(keep)) return(list())
+  sub <- df[keep, , drop = FALSE]
+  top_y <- pmax(sub$start, sub$end)
+  label_y <- compute_label_ypos(top_y, yaxis_max)
+  
+  # x must be a plain character string, not a factor: the initial static
+  # render tolerates a factor here because plotly's own R->JSON conversion
+  # maps it to its label, but the live plotlyProxy relayout path serializes
+  # through Shiny's generic JSON conversion instead, which turns a factor
+  # into its underlying integer code -- silently pointing the annotation
+  # at the wrong x category once the chart is live-updated post-render.
+  lapply(seq_len(nrow(sub)), function(i) {
+    list(
+      x = as.character(sub$label[i]),
+      y = label_y[i],
+      text = sprintf("%.0f B", sub$abs_value[i]),
+      showarrow = FALSE,
+      yanchor = "bottom",
+      font = list(color = "black", size = 11, family = "Arial")
+    )
+  })
+}
+
+# Shared white background / black border hover box style
+WATERFALL_HOVERLABEL <- list(
+  bgcolor = "white",
+  bordercolor = "black",
+  font = list(color = "black", size = 12, family = "Arial")
 )
 
 # Colors for time series (En-ROADS style)
@@ -191,14 +273,15 @@ TS_COLORS <- list(
   supply = "#27ae60",     # green - Total Supply
   gap = "#f39c12",        # orange - Gap
   pub = "#3498db",        # blue - Public
-
+  
   priv = "#9b59b6",       # purple - Private
   leverage = "#1abc9c",   # teal - Leverage
   carbon = "#34495e"      # dark - Carbon Markets
 )
 
-#' Create waterfall chart matching the Python/Matplotlib style
-create_waterfall_chart <- function(finance_result, chart_title) {
+#' Build the waterfall data frame (label/value/start/end/color/abs_value)
+#' shared by the static render and the live plotlyProxy update.
+waterfall_dataframe <- function(finance_result) {
   # Extract values (CFG is negative to show gap pointing downward)
   values <- c(
     finance_result$CF,
@@ -206,20 +289,19 @@ create_waterfall_chart <- function(finance_result, chart_title) {
     -finance_result$PRIV,
     -finance_result$PRIVpub,
     -finance_result$PRIVdom,
-    -finance_result$PRIVvol,
     -finance_result$PRIVint,
+    -finance_result$PRIVvol,
     -finance_result$CFG
   )
-
+  
   # Calculate waterfall positions (cumulative starts)
   starts <- numeric(length(values))
   starts[1] <- 0
   for (i in 2:length(values)) {
     starts[i] <- starts[i - 1] + values[i - 1]
   }
-
-  # Create data frame
-  df <- data.frame(
+  
+  data.frame(
     label = factor(WATERFALL_LABELS, levels = WATERFALL_LABELS),
     value = values,
     start = starts,
@@ -227,7 +309,12 @@ create_waterfall_chart <- function(finance_result, chart_title) {
     color = WATERFALL_COLORS,
     abs_value = abs(values)
   )
+}
 
+#' Create waterfall chart matching the Python/Matplotlib style
+create_waterfall_chart <- function(finance_result, chart_title) {
+  df <- waterfall_dataframe(finance_result)
+  
   # Create plotly chart with gradient overlay effect
   plot_ly(df, x = ~label) %>%
     add_bars(
@@ -236,13 +323,6 @@ create_waterfall_chart <- function(finance_result, chart_title) {
       marker = list(
         color = ~color,
         line = list(color = "black", width = 1)
-      ),
-      text = ~sprintf("%.0f B", abs_value),
-      textposition = "top",
-      textfont = list(
-        color = "black",
-        size = 11,
-        family = "Arial"
       ),
       hovertemplate = paste(
         "<b>%{x}</b><br>",
@@ -272,7 +352,9 @@ create_waterfall_chart <- function(finance_result, chart_title) {
       showlegend = FALSE,
       margin = list(b = 140, t = 80, l = 60, r = 20),
       plot_bgcolor = "white",
-      paper_bgcolor = "white"
+      paper_bgcolor = "white",
+      hoverlabel = WATERFALL_HOVERLABEL,
+      annotations = waterfall_label_annotations(df, yaxis_max = 9500)
     ) %>%
     config(
       displayModeBar = TRUE,
@@ -284,35 +366,8 @@ create_waterfall_chart <- function(finance_result, chart_title) {
 #' Create comparison waterfall chart (User Scenario vs Our Solution)
 #' Uses same waterfall style as the main charts
 create_comparison_waterfall <- function(user_result, icm_result) {
-  # Extract values for ICM+HLR solution (CFG is negative to show gap pointing downward)
-  values <- c(
-    icm_result$CF,
-    -icm_result$PUB,
-    -icm_result$PRIV,
-    -icm_result$PRIVpub,
-    -icm_result$PRIVdom,
-    -icm_result$PRIVvol,
-    -icm_result$PRIVint,
-    -icm_result$CFG
-  )
-
-  # Calculate waterfall positions
-  starts <- numeric(length(values))
-  starts[1] <- 0
-  for (i in 2:length(values)) {
-    starts[i] <- starts[i - 1] + values[i - 1]
-  }
-
-  # Create data frame
-  df <- data.frame(
-    label = factor(WATERFALL_LABELS, levels = WATERFALL_LABELS),
-    value = values,
-    start = starts,
-    end = starts + values,
-    color = WATERFALL_COLORS,
-    abs_value = abs(values)
-  )
-
+  df <- waterfall_dataframe(icm_result)
+  
   # Create plotly chart (same style as main waterfall)
   plot_ly(df, x = ~label) %>%
     add_bars(
@@ -321,13 +376,6 @@ create_comparison_waterfall <- function(user_result, icm_result) {
       marker = list(
         color = ~color,
         line = list(color = "black", width = 1)
-      ),
-      text = ~sprintf("%.0f B", abs_value),
-      textposition = "top",
-      textfont = list(
-        color = "black",
-        size = 11,
-        family = "Arial"
       ),
       hovertemplate = paste(
         "<b>%{x}</b><br>",
@@ -359,7 +407,9 @@ create_comparison_waterfall <- function(user_result, icm_result) {
       showlegend = FALSE,
       margin = list(b = 140, t = 80, l = 60, r = 20),
       plot_bgcolor = "white",
-      paper_bgcolor = "white"
+      paper_bgcolor = "white",
+      hoverlabel = WATERFALL_HOVERLABEL,
+      annotations = waterfall_label_annotations(df, yaxis_max = 9500)
     ) %>%
     config(
       displayModeBar = TRUE,
@@ -431,11 +481,11 @@ create_gap_timeseries <- function(bau_ts, custom_ts) {
 create_supply_timeseries <- function(custom_ts) {
   # Use spline interpolation for smoother curves
   years_smooth <- seq(min(custom_ts$year), max(custom_ts$year), by = 0.5)
-
+  
   smooth_data <- function(y_vals) {
     spline(custom_ts$year, y_vals, xout = years_smooth)$y
   }
-
+  
   # Create smoothed data
   df_smooth <- data.frame(
     year = years_smooth,
@@ -447,11 +497,11 @@ create_supply_timeseries <- function(custom_ts) {
     PRIVint = smooth_data(custom_ts$PRIVint),
     CF = smooth_data(custom_ts$CF)
   )
-
+  
   # Ensure no negative values from spline
-
+  
   df_smooth[df_smooth < 0] <- 0
-
+  
   plot_ly(df_smooth, x = ~year) %>%
     add_trace(
       y = ~PUB, type = "scatter", mode = "none",
@@ -572,6 +622,49 @@ custom_css <- "
   .irs--shiny .irs-min, .irs--shiny .irs-max {
     background: #ecf0f1; color: #7f8c8d; font-size: 12px;
     padding: 3px 8px; border-radius: 4px; visibility: visible !important;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.03); }
+  }
+  /* !important plus a doubled selector: bslib's compiled bootswatch theme
+     CSS for btn-default can otherwise win over this even though it is
+     declared later, since shiny actionButton() always keeps btn-default
+     in the class list alongside whatever we pass via class=. */
+  .btn.btn-step-idle {
+    background: #ffffff !important;
+    color: #1e5631 !important;
+    border: 2px solid #27ae60 !important;
+  }
+  .btn.btn-step-idle:hover, .btn.btn-step-idle:focus {
+    background: #f0f8f5 !important;
+    color: #1e5631 !important;
+  }
+  .about-box {
+    background: #ffffff;
+    border-left: 4px solid #27ae60;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    height: 100%;
+  }
+  .bau-box {
+    background: #ffffff;
+    border-left: 4px solid #3498db;
+    border-radius: 8px;
+    padding: 15px 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .guided-question-card {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 12px 15px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    font-size: 16px;
+    color: #555;
+    line-height: 1.6;
   }
   .intro-box {
     background: linear-gradient(135deg, #e8f8f0 0%, #d4efdf 100%);
@@ -1002,7 +1095,7 @@ ui <- page_fluid(
       });
     "))
   ),
-
+  
   # Hidden input to track landing page state
   shinyjs::hidden(
     div(
@@ -1010,7 +1103,7 @@ ui <- page_fluid(
       textInput("show_landing", "", value = "true")
     )
   ),
-
+  
   # ========== LANDING PAGE ==========
   conditionalPanel(
     condition = "input.show_landing == 'true'",
@@ -1100,12 +1193,12 @@ ui <- page_fluid(
           class = "footer-right",
           span(class = "contact-label", "Contact"),
           span(class = "contact-email",
-            tags$a(href = "mailto:xihu@edf.org", "xihu@edf.org"))
+               tags$a(href = "mailto:xihu@edf.org", "xihu@edf.org"))
         )
       )
     )
   ),
-
+  
   # ========== TITLE ==========
   conditionalPanel(
     condition = "input.show_landing == 'false'",
@@ -1122,332 +1215,425 @@ ui <- page_fluid(
       )
     )
   ),
-
+  
   # ========== MAIN CONTENT (only show when not on landing page) ==========
   conditionalPanel(
     condition = "input.show_landing == 'false'",
-
-  # ========== MAIN INTERACTION: ABOUT (LEFT) + CONTROLS + YOUR SCENARIO (RIGHT) ==========
-  div(
-    class = "container-fluid py-4",
-    style = "background: #f0f8f5; border-top: 5px solid #1e5631;",
-
-    fluidRow(
-      # ===== LEFT: About Panel (3 columns) =====
-      column(
-        3,
-        card(
-          card_header(
-            style = "background: #d4efdf; color: #1e5631; padding: 15px;",
-            icon("info-circle"), " About"
-          ),
-          card_body(
-            style = "padding: 20px; background: #f0f8f5;",
-            p(
-              "The Climate Finance Gap Explorer helps clarify a simple but urgent reality: the world is not investing enough to meet its climate goals.",
-              style = "font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 15px;"
+    
+    # ========== MAIN INTERACTION: ABOUT (LEFT) + CONTROLS + YOUR SCENARIO (RIGHT) ==========
+    div(
+      class = "container-fluid py-4",
+      style = "background: #f0f8f5; border-top: 5px solid #1e5631;",
+      
+      fluidRow(
+        # ===== LEFT: About Panel (3 columns) =====
+        column(
+          3,
+          card(
+            card_header(
+              style = "background: #d4efdf; color: #1e5631; padding: 15px;",
+              icon("info-circle"), " About"
             ),
-            p(
-              strong("In 2022,"), " a gap of USD 7.1 trillion remained between what is needed and what is actually flowing—especially to emerging economies.",
-              style = "font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 15px;"
-            ),
-            p(
-              "This tool shows how policy choices could meaningfully shift this trajectory by 2030. Adjust assumptions below to see how different strategies, from public finance growth to carbon market expansion, can help achieve our 2030 goals.",
-              style = "font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 15px;"
-            ),
-            p(
-              "For more information, refer to our ",
-              tags$a(
-                href = "https://www.nature.com/articles/s44168-025-00220-x",
-                target = "_blank",
-                "published paper",
-                style = "color: #1e5631; text-decoration: underline; font-weight: 600;"
+            card_body(
+              style = "padding: 20px; background: #f0f8f5;",
+              p(
+                "The Climate Finance Gap Explorer helps clarify a simple but urgent reality: the world is not investing enough to meet its climate goals.",
+                style = "font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 15px;"
               ),
-              ".",
-              style = "font-size: 14px; line-height: 1.6; color: #333;"
+              p(
+                strong("In 2022,"), " a gap of USD 7.1 trillion remained between what is needed and what is actually flowing, especially to emerging economies.",
+                style = "font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 15px;"
+              ),
+              p(
+                "This tool shows how policy choices could meaningfully shift this trajectory by 2030. Adjust assumptions below to see how different strategies, from public finance growth to carbon market expansion, can help achieve our 2030 goals.",
+                style = "font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 15px;"
+              ),
+              p(
+                "For more information, refer to our ",
+                tags$a(
+                  href = "https://www.nature.com/articles/s44168-025-00220-x",
+                  target = "_blank",
+                  "published paper",
+                  style = "color: #1e5631; text-decoration: underline; font-weight: 600;"
+                ),
+                ".",
+                style = "font-size: 14px; line-height: 1.6; color: #333;"
+              )
+            )
+          )
+        ),
+        
+        # ===== RIGHT: Baseline Charts (9 columns) =====
+        column(
+          9,
+          div(
+            class = "bau-box",
+            p(
+              "Even if public and private finance keep growing at their historical pace, ",
+              "that growth alone isn't enough. Without domestic carbon pricing expanding ",
+              "beyond its 2022 level, the climate finance gap in 2030 is still about ",
+              "$4,890 billion, more than half of the $8,400 billion needed.",
+              style = "margin: 0; font-size: 16px; color: #555; line-height: 1.6;"
+            )
+          ),
+          fluidRow(
+            column(6,
+                   card(
+                     card_header(style = "background: #272b30; color: white;",
+                                 icon("chart-area"), " 2022 Baseline"),
+                     card_body(plotlyOutput("chart_2022", height = "400px"))
+                   )
+            ),
+            column(6,
+                   card(
+                     card_header(style = "background: #272b30; color: white;",
+                                 icon("chart-area"), " 2030 BAU"),
+                     card_body(plotlyOutput("chart_2030_bau", height = "400px"))
+                   )
             )
           )
         )
       ),
-
-      # ===== RIGHT: Baseline Charts (9 columns) =====
-      column(
-        9,
-        fluidRow(
-          column(6,
-            card(
-              card_header(style = "background: #272b30; color: white;",
-                          icon("chart-area"), " 2022 Baseline"),
-              card_body(plotlyOutput("chart_2022", height = "400px"))
-            )
+      
+      # ========== BUILD YOUR SCENARIO (full-width) ==========
+      fluidRow(
+        column(
+          12,
+          div(
+            class = "text-center mb-3",
+            style = paste0(
+              "background: linear-gradient(90deg, #1e5631, #27ae60);",
+              "color: white; padding: 15px; border-radius: 10px;",
+              "margin-bottom: 15px;"
+            ),
+            h3(icon("sliders-h", class = "fa-lg"), " Build Your Scenario",
+               style = "color: #fff; font-weight: 700; margin: 0;"),
+            p("Adjust parameters to see if you can close the climate finance gap!",
+              style = "color: #d4efdf; margin: 5px 0 0 0; font-size: 14px;")
           ),
-          column(6,
-            card(
-              card_header(style = "background: #272b30; color: white;",
-                          icon("chart-area"), " 2030 BAU"),
-              card_body(plotlyOutput("chart_2030_bau", height = "400px"))
-            )
-          )
-        )
-      )
-    ),
-
-    # ========== BUILD YOUR SCENARIO (full-width) ==========
-    fluidRow(
-      column(
-        12,
-        div(
-          class = "text-center mb-3",
-          style = paste0(
-            "background: linear-gradient(90deg, #1e5631, #27ae60);",
-            "color: white; padding: 15px; border-radius: 10px;",
-            "margin-bottom: 15px;"
-          ),
-          h3(icon("sliders-h", class = "fa-lg"), " Build Your Scenario",
-             style = "color: #fff; font-weight: 700; margin: 0;"),
-          p("Adjust parameters to see if you can close the climate finance gap!",
-            style = "color: #d4efdf; margin: 5px 0 0 0; font-size: 14px;")
-        ),
-        # Gap status message
-        uiOutput("gap_status"),
-
-        div(id = "scenario-interactive",
-        fluidRow(
-          # ===== PARAMETERS CARD (6 columns) =====
-          column(
-            6, class = "params-col",
-        card(
-          card_header(style = "background: #272b30; color: white;",
-                      icon("sliders-h"), " Parameters"),
-          card_body(
-            fluidRow(
-              # Left column: Public + Private and International Carbon
-              column(6,
-                # Public + Private section
-                div(
-                  style = "background: #fff3e0; padding: 10px; border-radius: 8px;
-                           margin-bottom: 15px;",
-                  tags$h6(icon("landmark"), " Public + Private",
-                          style = "color: #e65100; margin-bottom: 10px;"),
-                  sliderInput("r",
-                    label = labelWithTooltip(
-                      "Public Growth Rate",
-                      "Annual growth rate of public climate finance.",
-                      "Controls how fast government and public institutions increase climate-related funding over time."
-                    ),
-                    min = 0.05, max = 0.25,
-                    value = DEFAULT_PARAMS$r, step = 0.0001),
-                  sliderInput("g",
-                    label = labelWithTooltip(
-                      "Private Growth Rate",
-                      "Annual growth rate of private climate finance not driven by carbon pricing or public leverage.",
-                      "Controls baseline growth of market-driven private investment in climate mitigation."
-                    ),
-                    min = 0.03, max = 0.20,
-                    value = DEFAULT_PARAMS$g, step = 0.0001),
-                  sliderInput("Lhighpub",
-                    label = labelWithTooltip(
-                      "Public Leverage",
-                      "Amount of private finance mobilised per dollar of public finance.",
-                      "Captures the crowd-in effect of public funding through guarantees, subsidies, and risk-sharing instruments."
-                    ),
-                    min = 0.1, max = 1.5,
-                    value = DEFAULT_PARAMS$Lhighpub, step = 0.1)
+          # ===== Where Things Stand Today + Guided Questions =====
+          fluidRow(
+            class = "mb-3",
+            column(
+              5,
+              div(
+                class = "about-box",
+                h5(icon("mountain"), " Where things stand today",
+                   style = "color: #1e5631; font-weight: 700; margin-bottom: 12px;"),
+                p(
+                  "As of 2025, there are 80 carbon pricing instruments in operation ",
+                  "worldwide, 43 carbon taxes and 37 emissions trading systems, together ",
+                  "covering about 28% of global greenhouse gas emissions and raising over ",
+                  "USD 100 billion in revenue in 2024. Emissions trading systems alone ",
+                  "raised a record near USD 80 billion in 2025.",
+                  style = "font-size: 16px; color: #333; line-height: 1.6; margin-bottom: 12px;"
                 ),
-                # International Carbon section
-                div(
-                  style = "background: #e0f7fa; padding: 10px; border-radius: 8px;",
-                  tags$h6(icon("globe"), " International Carbon Price",
-                          style = "color: #00838f; margin-bottom: 10px;"),
-                  sliderInput("ICMS_2030",
-                    label = labelWithTooltip(
-                      "Market Size",
-                      "Annual transaction value of the international carbon market.",
-                      "Determines how much capital is transferred through cross-border carbon trading mechanisms."
-                    ),
-                    min = 0, max = 500,
-                    value = DEFAULT_PARAMS$ICMS_2030, step = 10, post = " B"),
-                  sliderInput("Lcp_int",
-                    label = labelWithTooltip(
-                      "International Leverage",
-                      "Private investment mobilised per dollar of international carbon market transactions.",
-                      "Measures how international carbon markets amplify finance beyond direct credit payments."
-                    ),
-                    min = 1, max = 20,
-                    value = DEFAULT_PARAMS$Lcp_int, step = 1)
+                p(
+                  tags$strong("What's next for 2030?"),
+                  " Closing the remaining gap will take more than holding steady: ",
+                  "expanding carbon pricing to higher prices and broader coverage ",
+                  "(including EMDEs adopting their own policies), building out ",
+                  "international carbon markets, and raising leverage ratios so each ",
+                  "dollar of carbon revenue mobilises more private investment.",
+                  style = "font-size: 16px; color: #333; line-height: 1.6; margin-bottom: 12px;"
                 ),
-                hr(),
-                actionButton("reset_btn", label = "Reset All",
-                             icon = icon("sync-alt"),
-                             class = "btn btn-success w-100")
-              ),
-
-              # Right column: Domestic + Voluntary
-              column(6,
-                # Domestic Carbon section
-                div(
-                  style = "background: #e8f5e9; padding: 10px; border-radius: 8px;
-                           margin-bottom: 15px;",
-                  tags$h6(icon("industry"), " Domestic Carbon Price",
-                          style = "color: #2e7d32; margin-bottom: 10px;"),
-                  sliderInput("P_2030",
-                    label = labelWithTooltip(
-                      "Advanced Economies Price ($/tCO2)",
-                      "Average carbon price level in countries with strong carbon pricing systems.",
-                      "Determines price incentives for emissions reductions in advanced economies."
-                    ),
-                    min = 20, max = 150, value = DEFAULT_PARAMS$P_2030, step = 0.1),
-                  sliderInput("C_2030",
-                    label = labelWithTooltip(
-                      "Advanced Economies Coverage",
-                      "Share of global emissions covered by carbon pricing in mature systems.",
-                      "Controls how much of the economy is affected by carbon pricing in high-capacity countries."
-                    ),
-                    min = 0.1, max = 0.5, value = DEFAULT_PARAMS$C_2030, step = 0.05),
-                  sliderInput("P_mid",
-                    label = labelWithTooltip(
-                      "EMDEs Price ($/tCO2)",
-                      "Average carbon price level in Emerging market and developing economies (EMDEs) with weaker or emerging carbon pricing systems.",
-                      "Represents modest price incentives due to institutional or economic constraints in EMDEs."
-                    ),
-                    min = 10, max = 80, value = DEFAULT_PARAMS$P_mid, step = 5),
-                  sliderInput("C_low",
-                    label = labelWithTooltip(
-                      "EMDEs Coverage",
-                      "Share of global emissions covered by carbon pricing in Emerging market and developing economies (EMDEs).",
-                      "Controls carbon pricing coverage in EMDEs with nascent or developing systems."
-                    ),
-                    min = 0.1, max = 0.5, value = DEFAULT_PARAMS$C_low, step = 0.05),
-                  sliderInput("Lcp_dom",
-                    label = labelWithTooltip(
-                      "Domestic Leverage",
-                      "Private capital mobilised per dollar of domestic carbon pricing revenue.",
-                      "Captures how effectively carbon revenues translate into real investment."
-                    ),
-                    min = 1, max = 20, value = DEFAULT_PARAMS$Lcp_dom, step = 1)
-                ),
-                # Voluntary Carbon Market section
-                div(
-                  style = "background: #f3e5f5; padding: 10px; border-radius: 8px;",
-                  tags$h6(icon("leaf"), " Voluntary Carbon Price",
-                          style = "color: #7b1fa2; margin-bottom: 10px;"),
-                  sliderInput("VMS_2030",
-                    label = labelWithTooltip(
-                      "Voluntary Size",
-                      "Annual transaction value of the voluntary carbon market.",
-                      "Controls how much capital is mobilised through voluntary carbon credit purchases."
-                    ),
-                    min = 0, max = 100, value = DEFAULT_PARAMS$VMS_2030, step = 5, post = " B"),
-                  sliderInput("Lcp_vol",
-                    label = labelWithTooltip(
-                      "Voluntary Leverage",
-                      "Private investment mobilised per dollar spent in the voluntary carbon market.",
-                      "Measures whether voluntary credits lead to additional mitigation investment."
-                    ),
-                    min = 1, max = 20, value = DEFAULT_PARAMS$Lcp_vol, step = 1)
+                p(
+                  em("Sources: World Bank, State and Trends of Carbon Pricing 2025; ICAP, Status Report 2026."),
+                  style = "font-size: 12px; color: #777; line-height: 1.5; margin-bottom: 0;"
                 )
               )
+            ),
+            column(
+              7,
+              tags$strong("Guided questions to explore:",
+                          style = "display: block; margin-bottom: 10px; color: #1e5631;"),
+              div(
+                class = "guided-question-card",
+                icon("question-circle", style = "color: #27ae60;"),
+                tags$strong(" What if coverage expands at a higher price?", style = "color: #1e5631;"),
+                " If compliance domestic carbon markets raise their price and expand ",
+                "coverage, and EMDEs establish carbon pricing policies of their own, how ",
+                "much additional finance can that mobilise? Try adjusting the sliders ",
+                "across the whole Parameters panel to explore different scenarios."
+              ),
+              div(
+                class = "guided-question-card",
+                icon("question-circle", style = "color: #27ae60;"),
+                tags$strong(" Can international carbon markets help?", style = "color: #1e5631;"),
+                " Cooperation between countries can also mobilise climate finance. Try ",
+                "the International Carbon Price sliders (Market Size and Leverage) to ",
+                "see how much international carbon markets alone could contribute."
+              ),
+              div(
+                class = "guided-question-card",
+                icon("question-circle", style = "color: #27ae60;"),
+                tags$strong(" Can higher leverage unlock more investment?", style = "color: #1e5631;"),
+                " If carbon pricing revenue can leverage more private capital, it may ",
+                "create a better investment environment overall. Try the Leverage ",
+                "Ratio sliders to see the effect."
+              )
             )
-          )
-        )
-      ),
-
-      # ===== RIGHT: Your Scenario Chart (6 columns) =====
-      column(
-        6, class = "chart-col",
-        card(
-          card_header(
-            style = "background: #272b30; color: white;",
-            icon("chart-area"), " Your Scenario in 2030"
           ),
-          card_body(
-            div(
-              style = "position: relative;",
-              plotlyOutput("chart_2030_custom", height = "600px"),
-              # Remaining Gap label with click tooltip
-              div(
-                id = "remaining_gap_label",
-                style = paste0(
-                  "position: absolute; top: 80px; right: 20px; ",
-                  "background: #27ae60; padding: 10px 15px; ",
-                  "border-radius: 6px; cursor: pointer; ",
-                  "font-weight: 600; color: white; font-size: 14px; ",
-                  "border: 2px solid #27ae60; transition: all 0.3s ease;"
+          
+          # Gap status message (below the guided questions)
+          uiOutput("gap_status"),
+          
+          div(id = "scenario-interactive",
+              fluidRow(
+                # ===== PARAMETERS CARD (6 columns) =====
+                column(
+                  6, class = "params-col",
+                  card(
+                    card_header(style = "background: #272b30; color: white;",
+                                icon("sliders-h"), " Parameters"),
+                    card_body(
+                      fluidRow(
+                        # Left column: Public + Private and International Carbon
+                        column(6,
+                               # Public + Private section
+                               div(
+                                 style = "background: #fff3e0; padding: 10px; border-radius: 8px;
+                           margin-bottom: 15px;",
+                                 tags$h6(icon("landmark"), " Public + Private",
+                                         style = "color: #e65100; margin-bottom: 10px;"),
+                                 sliderInput("r",
+                                             label = labelWithTooltip(
+                                               "Public Growth Rate",
+                                               "Annual growth rate of public climate finance.",
+                                               "Controls how fast government and public institutions increase climate-related funding over time."
+                                             ),
+                                             min = 0.05, max = 0.25,
+                                             value = DEFAULT_PARAMS$r, step = 0.0001),
+                                 sliderInput("g",
+                                             label = labelWithTooltip(
+                                               "Private Growth Rate",
+                                               "Annual growth rate of private climate finance not driven by carbon pricing or public leverage.",
+                                               "Controls baseline growth of market-driven private investment in climate mitigation."
+                                             ),
+                                             min = 0.03, max = 0.20,
+                                             value = DEFAULT_PARAMS$g, step = 0.0001),
+                                 sliderInput("Lhighpub",
+                                             label = labelWithTooltip(
+                                               "Public+Private Leverage Ratio",
+                                               "Amount of private finance mobilised per dollar of public finance.",
+                                               "Captures the crowd-in effect of public funding through guarantees, subsidies, and risk-sharing instruments."
+                                             ),
+                                             min = 0.1, max = 1.5,
+                                             value = DEFAULT_PARAMS$Lhighpub, step = 0.1)
+                               ),
+                               # International Carbon section
+                               div(
+                                 style = "background: #e0f7fa; padding: 10px; border-radius: 8px;",
+                                 tags$h6(icon("globe"), " International Carbon Price",
+                                         style = "color: #00838f; margin-bottom: 10px;"),
+                                 sliderInput("ICMS_2030",
+                                             label = labelWithTooltip(
+                                               "Market Size",
+                                               "Annual transaction value of the international carbon market.",
+                                               "Determines how much capital is transferred through cross-border carbon trading mechanisms."
+                                             ),
+                                             min = 0, max = 500,
+                                             value = DEFAULT_PARAMS$ICMS_2030, step = 10, post = " B"),
+                                 sliderInput("Lcp_int",
+                                             label = labelWithTooltip(
+                                               "International Carbon Price Leverage Ratio",
+                                               "Private investment mobilised per dollar of international carbon market transactions.",
+                                               "Measures how international carbon markets amplify finance beyond direct credit payments."
+                                             ),
+                                             min = 1, max = 20,
+                                             value = DEFAULT_PARAMS$Lcp_int, step = 1)
+                               ),
+                               hr(),
+                               actionButton("reset_btn", label = "Reset All",
+                                            icon = icon("sync-alt"),
+                                            class = "btn btn-success w-100")
+                        ),
+                        
+                        # Right column: Domestic + Voluntary
+                        column(6,
+                               # Domestic Carbon section
+                               div(
+                                 style = "background: #e8f5e9; padding: 10px; border-radius: 8px;
+                           margin-bottom: 15px;",
+                                 tags$h6(icon("industry"), " Domestic Carbon Price",
+                                         style = "color: #2e7d32; margin-bottom: 10px;"),
+                                 sliderInput("P_2030",
+                                             label = labelWithTooltip(
+                                               "Advanced Economies Price ($/tCO2)",
+                                               "Average carbon price level in countries with strong carbon pricing systems.",
+                                               "Determines price incentives for emissions reductions in advanced economies."
+                                             ),
+                                             min = 15, max = 150, value = DEFAULT_PARAMS$P_2030, step = 0.1),
+                                 sliderInput("C_2030",
+                                             label = labelWithTooltip(
+                                               "Advanced Economies Coverage",
+                                               "Share of global emissions covered by carbon pricing in mature systems.",
+                                               "Controls how much of the economy is affected by carbon pricing in high-capacity countries."
+                                             ),
+                                             min = 0.1, max = 0.5, value = DEFAULT_PARAMS$C_2030, step = 0.05),
+                                 sliderInput("P_mid",
+                                             label = labelWithTooltip(
+                                               "EMDEs Price ($/tCO2)",
+                                               "Average carbon price level in Emerging market and developing economies (EMDEs) with weaker or emerging carbon pricing systems.",
+                                               "Represents modest price incentives due to institutional or economic constraints in EMDEs."
+                                             ),
+                                             min = 10, max = 80, value = DEFAULT_PARAMS$P_mid, step = 5),
+                                 sliderInput("C_low",
+                                             label = labelWithTooltip(
+                                               "EMDEs Coverage",
+                                               "Share of global emissions covered by carbon pricing in Emerging market and developing economies (EMDEs).",
+                                               "Controls carbon pricing coverage in EMDEs with nascent or developing systems."
+                                             ),
+                                             min = 0, max = 0.5, value = DEFAULT_PARAMS$C_low, step = 0.05),
+                                 sliderInput("Lcp_dom",
+                                             label = labelWithTooltip(
+                                               "Domestic Carbon Price Leverage Ratio",
+                                               "Private capital mobilised per dollar of domestic carbon pricing revenue.",
+                                               "Captures how effectively carbon revenues translate into real investment."
+                                             ),
+                                             min = 1, max = 20, value = DEFAULT_PARAMS$Lcp_dom, step = 1)
+                               ),
+                               # Voluntary Carbon Market section
+                               div(
+                                 style = "background: #f3e5f5; padding: 10px; border-radius: 8px;",
+                                 tags$h6(icon("leaf"), " Voluntary Carbon Price",
+                                         style = "color: #7b1fa2; margin-bottom: 10px;"),
+                                 sliderInput("VMS_2030",
+                                             label = labelWithTooltip(
+                                               "Voluntary Size",
+                                               "Annual transaction value of the voluntary carbon market.",
+                                               "Controls how much capital is mobilised through voluntary carbon credit purchases."
+                                             ),
+                                             min = 0, max = 100, value = DEFAULT_PARAMS$VMS_2030, step = 5, post = " B"),
+                                 sliderInput("Lcp_vol",
+                                             label = labelWithTooltip(
+                                               "Voluntary Leverage Ratio",
+                                               "Private investment mobilised per dollar spent in the voluntary carbon market.",
+                                               "Measures whether voluntary credits lead to additional mitigation investment."
+                                             ),
+                                             min = 1, max = 20, value = DEFAULT_PARAMS$Lcp_vol, step = 1)
+                               )
+                        )
+                      )
+                    )
+                  )
                 ),
-                "Check Remaining Gap"
-              ),
-              # Hidden tooltip that shows on click
-              div(
-                id = "gap_tooltip",
-                style = paste0(
-                  "position: absolute; top: 130px; right: 20px; ",
-                  "background: white; border: 2px solid #333; ",
-                  "border-radius: 8px; padding: 20px; ",
-                  "min-width: 250px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); ",
-                  "z-index: 1000; display: none; text-align: center;"
-                ),
-                div(id = "gap_tooltip_inner")
-              )
-            ),
-            hr(),
-            fluidRow(
-              column(6,
-                actionButton("show_icm_btn",
-                  label = "Show Our Solution",
-                  icon = icon("lightbulb"),
-                  class = "btn btn-warning w-100")
-              ),
-              column(6,
-                actionButton("hide_icm_btn", label = "Hide Our Solution",
-                             icon = icon("eye-slash"),
-                             class = "btn btn-secondary w-100")
-              )
-            ),
-            hr(),
-            h4("Download Your Scenario",
-               class = "text-center mb-3",
-               style = paste0(
-                 "font-weight: 600; font-size: 1.3rem; color: #2c3e50; ",
-                 "letter-spacing: 0.5px; font-family: 'Roboto', sans-serif;"
-               )),
-            fluidRow(
-              column(6,
-                downloadButton("download_params",
-                  label = "Download Parameters",
-                  icon = icon("file-csv"),
-                  class = "btn btn-info w-100")
-              ),
-              column(6,
-                downloadButton("download_chart",
-                  label = "Download Chart",
-                  icon = icon("chart-bar"),
-                  class = "btn btn-info w-100")
-              )
-            )
-          )
-        )
+                
+                # ===== RIGHT: Your Scenario Chart (6 columns) =====
+                column(
+                  6, class = "chart-col",
+                  card(
+                    card_header(
+                      style = "background: #272b30; color: white;",
+                      icon("chart-area"), " Your Scenario in 2030"
+                    ),
+                    card_body(
+                      div(
+                        style = "position: relative;",
+                        plotlyOutput("chart_2030_custom", height = "600px"),
+                        # Remaining Gap label with click tooltip
+                        div(
+                          id = "remaining_gap_label",
+                          style = paste0(
+                            "position: absolute; top: 80px; right: 20px; ",
+                            "background: #27ae60; padding: 10px 15px; ",
+                            "border-radius: 6px; cursor: pointer; ",
+                            "font-weight: 600; color: white; font-size: 14px; ",
+                            "border: 2px solid #27ae60; transition: all 0.3s ease;"
+                          ),
+                          "Check Remaining Gap"
+                        ),
+                        # Hidden tooltip that shows on click
+                        div(
+                          id = "gap_tooltip",
+                          style = paste0(
+                            "position: absolute; top: 130px; right: 20px; ",
+                            "background: white; border: 2px solid #333; ",
+                            "border-radius: 8px; padding: 20px; ",
+                            "min-width: 250px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); ",
+                            "z-index: 1000; display: none; text-align: center;"
+                          ),
+                          div(id = "gap_tooltip_inner")
+                        )
+                      ),
+                      hr(),
+                      p("Build the solution step by step. Click an active step again to undo it.",
+                        class = "text-center mb-1",
+                        style = "font-size: 13px; color: #555;"),
+                      uiOutput("step_status_text"),
+                      fluidRow(
+                        column(4,
+                               actionButton("step1_btn", "Step 1: Expand Domestic Price",
+                                            class = "btn btn-step-idle w-100")
+                        ),
+                        column(4,
+                               actionButton("step2_btn", "Step 2: Expand International",
+                                            class = "btn btn-step-idle w-100")
+                        ),
+                        column(4,
+                               actionButton("step3_btn", "Step 3: Raise Leverage Ratio",
+                                            class = "btn btn-step-idle w-100")
+                        )
+                      ),
+                      hr(),
+                      fluidRow(
+                        column(6,
+                               actionButton("show_icm_btn",
+                                            label = "Show Our Solution",
+                                            icon = icon("lightbulb"),
+                                            class = "btn btn-warning w-100")
+                        ),
+                        column(6,
+                               actionButton("hide_icm_btn", label = "Hide Our Solution",
+                                            icon = icon("eye-slash"),
+                                            class = "btn btn-secondary w-100")
+                        )
+                      ),
+                      hr(),
+                      h4("Download Your Scenario",
+                         class = "text-center mb-3",
+                         style = paste0(
+                           "font-weight: 600; font-size: 1.3rem; color: #2c3e50; ",
+                           "letter-spacing: 0.5px; font-family: 'Roboto', sans-serif;"
+                         )),
+                      fluidRow(
+                        column(6,
+                               downloadButton("download_params",
+                                              label = "Download Parameters",
+                                              icon = icon("file-csv"),
+                                              class = "btn btn-info w-100")
+                        ),
+                        column(6,
+                               downloadButton("download_chart",
+                                              label = "Download Chart",
+                                              icon = icon("chart-bar"),
+                                              class = "btn btn-info w-100")
+                        )
+                      )
+                    )
+                  )
+                )
+              ) # end fluidRow params+chart
+          ) # end div scenario-interactive
+        ) # end column(12)
+      ), # end fluidRow Build Your Scenario
+      
+      # Mobile floating chart toggle button (hidden on desktop)
+      tags$button(
+        id = "mobile-chart-toggle",
+        onclick = paste0(
+          "var c = document.querySelector('.chart-col');",
+          "if(c) c.classList.toggle('collapsed');",
+          "var btn = document.getElementById('mobile-chart-toggle');",
+          "if(c && c.classList.contains('collapsed')){",
+          "btn.innerHTML='&#9650; Show Chart';}",
+          "else{btn.innerHTML='&#9660; Hide Chart';}"
+        ),
+        HTML("&#9660; Hide Chart")
       )
-        ) # end fluidRow params+chart
-        ) # end div scenario-interactive
-      ) # end column(12)
-    ), # end fluidRow Build Your Scenario
-
-    # Mobile floating chart toggle button (hidden on desktop)
-    tags$button(
-      id = "mobile-chart-toggle",
-      onclick = paste0(
-        "var c = document.querySelector('.chart-col');",
-        "if(c) c.classList.toggle('collapsed');",
-        "var btn = document.getElementById('mobile-chart-toggle');",
-        "if(c && c.classList.contains('collapsed')){",
-        "btn.innerHTML='&#9650; Show Chart';}",
-        "else{btn.innerHTML='&#9660; Hide Chart';}"
-      ),
-      HTML("&#9660; Hide Chart")
-    )
-  ),
-
-  # ========== FOOTER ==========
+    ),
+    
+    # ========== FOOTER ==========
     div(
       class = "text-center py-3 text-muted",
       style = "background: #f8f9fa;",
@@ -1461,19 +1647,23 @@ ui <- page_fluid(
 # ==============================================================================
 
 server <- function(input, output, session) {
-
+  
   # Handle "Launch Interactive Tool" button click
   observeEvent(input$enter_tool, {
     updateTextInput(session, "show_landing", value = "false")
     shinyjs::runjs("window.scrollTo(0, 0);")
   })
-
+  
   # Reactive value to track whether to show ICM+HLR solution
   show_icm_solution <- reactiveVal(FALSE)
-
+  
   # Store user's parameters before showing ICM solution
   saved_user_params <- reactiveVal(NULL)
-
+  
+  # Reactive value tracking how many "build the solution" steps are active
+  # (0 = none, 1 = domestic expanded, 2 = + international, 3 = + leverage)
+  active_step <- reactiveVal(0)
+  
   # Get current parameters from inputs (use defaults for removed sliders)
   current_params <- reactive({
     list(
@@ -1496,12 +1686,12 @@ server <- function(input, output, session) {
       Lcp_int = input$Lcp_int
     )
   })
-
+  
   # Show ICM+HLR button handler
   observeEvent(input$show_icm_btn, {
     # Save current user parameters before switching
     saved_user_params(current_params())
-
+    
     show_icm_solution(TRUE)
     # Update sliders to ICM+HLR values
     updateSliderInput(session, "r", value = ICM_HLR_PARAMS$r)
@@ -1530,12 +1720,13 @@ server <- function(input, output, session) {
     shinyjs::disable("VMS_2030")
     shinyjs::disable("Lcp_vol")
     shinyjs::disable("reset_btn")
+    active_step(3)
   })
-
+  
   # Hide ICM+HLR button handler
   observeEvent(input$hide_icm_btn, {
     show_icm_solution(FALSE)
-
+    
     # Restore user's saved parameters
     if (!is.null(saved_user_params())) {
       params <- saved_user_params()
@@ -1552,7 +1743,7 @@ server <- function(input, output, session) {
       updateSliderInput(session, "VMS_2030", value = params$VMS_2030)
       updateSliderInput(session, "Lcp_vol", value = params$Lcp_vol)
     }
-
+    
     # Re-enable all parameter sliders
     shinyjs::enable("r")
     shinyjs::enable("g")
@@ -1567,8 +1758,94 @@ server <- function(input, output, session) {
     shinyjs::enable("VMS_2030")
     shinyjs::enable("Lcp_vol")
     shinyjs::enable("reset_btn")
+    active_step(0)
   })
-
+  
+  # ===== Build the solution step by step (Step 1 -> 2 -> 3) =====
+  # Clicking an active step again undoes just that step (cascading, one
+  # level at a time); a step only responds once the previous one is active.
+  
+  # Step 1: Expand Domestic Price
+  observeEvent(input$step1_btn, {
+    if (active_step() == 0) {
+      updateSliderInput(session, "P_2030", value = ICM_HLR_PARAMS$P_2030)
+      updateSliderInput(session, "C_2030", value = ICM_HLR_PARAMS$C_2030)
+      updateSliderInput(session, "P_mid", value = ICM_HLR_PARAMS$P_mid)
+      updateSliderInput(session, "C_low", value = ICM_HLR_PARAMS$C_low)
+      active_step(1)
+    } else if (active_step() == 1) {
+      updateSliderInput(session, "P_2030", value = DEFAULT_PARAMS$P_2030)
+      updateSliderInput(session, "C_2030", value = DEFAULT_PARAMS$C_2030)
+      updateSliderInput(session, "P_mid", value = DEFAULT_PARAMS$P_mid)
+      updateSliderInput(session, "C_low", value = DEFAULT_PARAMS$C_low)
+      active_step(0)
+    }
+  })
+  
+  # Step 2: Expand International
+  observeEvent(input$step2_btn, {
+    if (active_step() == 1) {
+      updateSliderInput(session, "ICMS_2030", value = ICM_HLR_PARAMS$ICMS_2030)
+      active_step(2)
+    } else if (active_step() == 2) {
+      updateSliderInput(session, "ICMS_2030", value = DEFAULT_PARAMS$ICMS_2030)
+      active_step(1)
+    }
+  })
+  
+  # Step 3: Raise Leverage Ratio
+  observeEvent(input$step3_btn, {
+    if (active_step() == 2) {
+      updateSliderInput(session, "Lhighpub", value = ICM_HLR_PARAMS$Lhighpub)
+      updateSliderInput(session, "Lcp_dom", value = ICM_HLR_PARAMS$Lcp_dom)
+      updateSliderInput(session, "Lcp_int", value = ICM_HLR_PARAMS$Lcp_int)
+      updateSliderInput(session, "Lcp_vol", value = ICM_HLR_PARAMS$Lcp_vol)
+      active_step(3)
+    } else if (active_step() == 3) {
+      updateSliderInput(session, "Lhighpub", value = DEFAULT_PARAMS$Lhighpub)
+      updateSliderInput(session, "Lcp_dom", value = DEFAULT_PARAMS$Lcp_dom)
+      updateSliderInput(session, "Lcp_int", value = DEFAULT_PARAMS$Lcp_int)
+      updateSliderInput(session, "Lcp_vol", value = DEFAULT_PARAMS$Lcp_vol)
+      active_step(2)
+    }
+  })
+  
+  # Keep the 3 step buttons' look/enabled-state in sync with active_step,
+  # without recreating them (so their click counters are never reset).
+  observe({
+    as <- active_step()
+    locked <- show_icm_solution()
+    
+    # All 3 steps start in their plain default look. A step only turns
+    # green once it has actually been clicked (as >= i) -- becoming
+    # clickable is not the same as being active, so it must not change
+    # color just from that; when not lit, leave it as the plain default
+    # button (no grey override).
+    shinyjs::removeClass("step1_btn", "btn-step-idle btn-success")
+    shinyjs::addClass("step1_btn", if (as >= 1) "btn-success" else "btn-step-idle")
+    
+    shinyjs::removeClass("step2_btn", "btn-step-idle btn-success")
+    shinyjs::addClass("step2_btn", if (as >= 2) "btn-success" else "btn-step-idle")
+    
+    shinyjs::removeClass("step3_btn", "btn-step-idle btn-success")
+    shinyjs::addClass("step3_btn", if (as >= 3) "btn-success" else "btn-step-idle")
+    
+    shinyjs::toggleState("step1_btn", !locked && as <= 1)
+    shinyjs::toggleState("step2_btn", !locked && as >= 1)
+    shinyjs::toggleState("step3_btn", !locked && as >= 2)
+  })
+  
+  output$step_status_text <- renderUI({
+    as <- active_step()
+    msg <- switch(as + 1,
+                  "No steps active yet. Click Step 1 to begin building the solution.",
+                  "Step 1 active: domestic carbon pricing expanded. Click Step 2 to continue, or click Step 1 again to undo.",
+                  "Steps 1 and 2 active: domestic and international carbon markets expanded. Click Step 3 to continue, or click Step 2 again to undo.",
+                  "All 3 steps active: you have closed the climate finance gap! Click Step 3 again to undo."
+    )
+    p(msg, class = "text-center text-muted mb-2", style = "font-size: 13px;")
+  })
+  
   # Chart 1: 2022 Baseline (smaller axis fonts for compact display)
   output$chart_2022 <- renderPlotly({
     result <- calculate_2022_baseline(DEFAULT_PARAMS)
@@ -1579,7 +1856,7 @@ server <- function(input, output, session) {
         margin = list(b = 100, t = 40, l = 50, r = 10)
       )
   })
-
+  
   # Chart 2: 2030 BAU (smaller axis fonts for compact display)
   output$chart_2030_bau <- renderPlotly({
     result <- calculate_finance(BAU_PARAMS, year = 2030)
@@ -1590,20 +1867,22 @@ server <- function(input, output, session) {
         margin = list(b = 100, t = 40, l = 50, r = 10)
       )
   })
-
+  
   # Chart 3: 2030 Custom (Your Scenario - updates with sliders)
   # Shows comparison with ICM+HLR when button is clicked
+  #
+  # This only fully re-renders when the STRUCTURE changes (switching in/out
   output$chart_2030_custom <- renderPlotly({
     user_result <- calculate_finance(current_params(), year = 2030)
     is_mobile <- isTRUE(input$is_mobile)
-
+    
     if (show_icm_solution()) {
       icm_result <- calculate_finance(ICM_HLR_PARAMS, year = 2030)
       p <- create_comparison_waterfall(user_result, icm_result)
     } else {
       p <- create_waterfall_chart(user_result, "")
     }
-
+    
     # Mobile: smaller axis fonts, wider bars, tighter margins
     if (is_mobile) {
       p <- p %>%
@@ -1630,12 +1909,12 @@ server <- function(input, output, session) {
     }
     p
   })
-
+  
   # Gap status message
   output$gap_status <- renderUI({
     result <- calculate_finance(current_params(), year = 2030)
     gap <- result$CFG
-
+    
     if (gap <= 0) {
       div(
         class = "text-center mb-3",
@@ -1643,7 +1922,7 @@ server <- function(input, output, session) {
           "background: linear-gradient(90deg, #27ae60, #2ecc71);",
           "color: white; padding: 15px; border-radius: 10px;",
           "font-size: 18px; font-weight: 700;",
-          "animation: pulse 1s infinite;"
+          "animation: pulse 0.6s ease-in-out 2;"
         ),
         icon("check-circle", class = "fa-lg"),
         " 🎉 Congratulations! You filled the climate finance gap! ",
@@ -1658,11 +1937,11 @@ server <- function(input, output, session) {
           "font-size: 18px; font-weight: 700;"
         ),
         icon("exclamation-triangle", class = "fa-lg"),
-        sprintf(" Remaining Gap: $%.0f B — Keep adjusting!", gap)
+        sprintf(" Remaining Gap: $%.0f B. Keep adjusting!", gap)
       )
     }
   })
-
+  
   # JavaScript to handle click and display tooltip with gap value
   session$onFlushed(function() {
     shinyjs::runjs("
@@ -1720,7 +1999,7 @@ server <- function(input, output, session) {
       });
     ")
   }, once = TRUE)
-
+  
   # Reset button handler
   observeEvent(input$reset_btn, {
     # Public + Private Finance
@@ -1739,8 +2018,9 @@ server <- function(input, output, session) {
     # Voluntary Carbon Market
     updateSliderInput(session, "VMS_2030", value = DEFAULT_PARAMS$VMS_2030)
     updateSliderInput(session, "Lcp_vol", value = DEFAULT_PARAMS$Lcp_vol)
+    active_step(0)
   })
-
+  
   # Download parameters as CSV
   output$download_params <- downloadHandler(
     filename = function() {
@@ -1755,7 +2035,7 @@ server <- function(input, output, session) {
       write.csv(df, file, row.names = FALSE)
     }
   )
-
+  
   # Download chart as HTML
   output$download_chart <- downloadHandler(
     filename = function() {
@@ -1763,14 +2043,14 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       user_result <- calculate_finance(current_params(), year = 2030)
-
+      
       if (show_icm_solution()) {
         icm_result <- calculate_finance(ICM_HLR_PARAMS, year = 2030)
         chart <- create_comparison_waterfall(user_result, icm_result)
       } else {
         chart <- create_waterfall_chart(user_result, "")
       }
-
+      
       # Export as interactive HTML (without selfcontained to avoid pandoc requirement)
       htmlwidgets::saveWidget(
         as_widget(chart),
