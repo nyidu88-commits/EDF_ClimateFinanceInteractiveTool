@@ -685,10 +685,10 @@ custom_css <- "
     flex-direction: column;
   }
   .reflect-title {
-    display: flex; align-items: baseline; gap: 10px;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px;
     margin: 0 2px 10px 2px;
   }
-  .reflect-title strong { font-size: 16px; color: #1e5631; }
+  .reflect-title strong { font-size: 16px; color: #1e5631; white-space: nowrap; }
   .reflect-title span { font-size: 13px; color: #777; }
   .reflect-grid {
     flex: 1 1 auto;
@@ -1195,7 +1195,12 @@ ui <- page_fluid(
         var el = document.getElementById(id);
         if (!el) return;
         var box = $(el).closest('.shiny-input-container')[0] || el;
-        box.scrollIntoView({behavior: 'smooth', block: 'center'});
+        if ($('body').hasClass('mobile-mode')) {
+          // the floating chart covers the lower half of the phone screen, so park the slider near the top
+          window.scrollTo({top: box.getBoundingClientRect().top + window.pageYOffset - 90, behavior: 'smooth'});
+        } else {
+          box.scrollIntoView({behavior: 'smooth', block: 'center'});
+        }
         $(box).removeClass('slider-flash');
         void box.offsetWidth;
         $(box).addClass('slider-flash');
